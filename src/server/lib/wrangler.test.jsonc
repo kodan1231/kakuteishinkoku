@@ -1,0 +1,6 @@
+// テスト専用（ローカル D1 のみ）
+{
+  "name": "kakuteishinkoku-test",
+  "compatibility_date": "2026-10-01",
+  "d1_databases": [{ "binding": "DB", "database_name": "test", "database_id": "test" }]
+}

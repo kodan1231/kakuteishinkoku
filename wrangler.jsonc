@@ -10,15 +10,17 @@
   "ai": {
     "binding": "AI"
   },
-  // D1 は Step 2 で使用する。データベース作成後に database_id を設定してコメントを外す。
-  // "d1_databases": [
-  //   {
-  //     "binding": "DB",
-  //     "database_name": "kakuteishinkoku",
-  //     "database_id": "<database_id>",
-  //     "migrations_dir": "migrations"
-  //   }
-  // ],
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "kakuteishinkoku",
+      "database_id": "3c5208f4-f598-49bf-af85-be36af08dc85",
+      "migrations_dir": "migrations"
+    }
+  ],
+  // GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET / ADMIN_EMAIL / OCR_LAB_KEY はダッシュボードで設定する。
+  // 自動デプロイで消えないように、ダッシュボード側の変数を保持する。
+  "keep_vars": true,
   "observability": {
     "enabled": true
   }

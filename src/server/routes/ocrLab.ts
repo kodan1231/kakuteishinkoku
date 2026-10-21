@@ -1,10 +1,10 @@
 import { Hono } from "hono";
 import { OCR_CANDIDATE_MODELS, type OcrLabRequest } from "../../shared/ocr";
-import type { Env } from "../env";
+import type { AppEnv } from "../env";
 import { runReceiptOcr } from "../lib/ocr";
 
 /** Step 0 の OCR 精度比較用 API。本番の OCR API ができたら削除する */
-export const ocrLab = new Hono<{ Bindings: Env }>();
+export const ocrLab = new Hono<AppEnv>();
 
 const MAX_IMAGE_CHARS = 2_000_000; // data URI で約1.5MB
 
