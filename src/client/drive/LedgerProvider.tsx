@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useAuth } from "../auth/AuthProvider";
+import { resizeToBlob } from "../lib/image";
 import { loadString, saveString } from "../lib/storage";
 import { defaultTaxYear } from "../lib/taxYear";
 import { GoogleClient } from "./google";
@@ -7,16 +8,24 @@ import type { FamilyMember } from "./ledger";
 import { LedgerCache } from "./ledgerCache";
 import {
   addFamilyMember,
+  addRecord,
   createLedger,
   createRoot,
   deleteFamilyMember,
+  deleteRecord,
   findRoot,
   loadLedgerData,
   openLedger,
+  renameReceipts,
   reorderFamily,
+  trashFiles,
   updateFamilyMember,
+  updateRecord,
+  uploadReceipts,
   type Ledger,
+  type ReceiptContent,
 } from "./ledgerService";
+import { parseAmount, PDF_MAX_BYTES, type MedicalRecord, type RecordInput } from "./records";
 
 /**
  * 選択中の年度の台帳と家族の状態。
@@ -30,6 +39,7 @@ export type LedgerState =
       status: "ready";
       ledger: Ledger;
       family: FamilyMember[];
+      records: MedicalRecord[];
       /** 同じ年度の台帳が複数あるなど */
       warnings: string[];
       /** 見出しの変更・id の重複など、台帳の中身の問題 */
@@ -46,6 +56,13 @@ export interface MemberInput {
   relationship: string;
 }
 
+export interface SaveRecordOptions {
+  /** 編集する記録の id（新規なら省略） */
+  id?: string;
+  newFiles: File[];
+  removedFileIds: string[];
+}
+
 interface LedgerContextValue {
   state: LedgerState;
   year: number;
@@ -56,6 +73,28 @@ interface LedgerContextValue {
   saveMember: (m: MemberInput) => Promise<void>;
   deleteMember: (id: string) => Promise<void>;
   moveMember: (id: string, delta: -1 | 1) => Promise<void>;
+  saveRecord: (input: RecordInput, opts: SaveRecordOptions) => Promise<void>;
+  deleteRecord: (id: string) => Promise<void>;
+  /** 領収書ファイルの中身と種類（表示用） */
+  loadReceipt: (fileId: string) => Promise<{ blob: Blob; mimeType: string }>;
+}
+
+const RECEIPT_MAX_EDGE = 1600;
+
+/** 写真は縮小して位置情報を除き、PDF はそのまま保存する */
+async function prepareReceipt(file: File): Promise<ReceiptContent> {
+  if (file.type === "application/pdf") {
+    if (file.size > PDF_MAX_BYTES) throw new Error(`${file.name} は10MBを超えているため保存できません`);
+    return { blob: file, mimeType: file.type };
+  }
+  if (file.type.startsWith("image/")) {
+    try {
+      return { blob: await resizeToBlob(file, RECEIPT_MAX_EDGE), mimeType: "image/jpeg" };
+    } catch {
+      throw new Error(`${file.name} を画像として読み込めませんでした`);
+    }
+  }
+  throw new Error(`${file.name} は保存できない形式です（写真か PDF を選んでください）`);
 }
 
 const LedgerContext = createContext<LedgerContextValue | null>(null);
@@ -103,7 +142,7 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
           const opened = await openLedger(client, cache, root, y);
           if (!opened) return { status: "needsSetup" };
           const data = await loadLedgerData(client, opened.ledger.spreadsheetId);
-          return { status: "ready", ...opened, family: data.members, problems: data.problems };
+          return { status: "ready", ...opened, family: data.members, records: data.records, problems: data.problems };
         })().finally(() => inflight.current.delete(y));
         inflight.current.set(y, p);
       }
@@ -145,7 +184,7 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
     [client, cache, year, reload],
   );
 
-  /** 書き込み後に家族を読み直す（読み込み中表示にはしない） */
+  /** 書き込み後に家族・記録を読み直す（読み込み中表示にはしない） */
   const withReady = useCallback(
     async (f: (s: ReadyState) => Promise<void>) => {
       const s = stateRef.current;
@@ -154,7 +193,7 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
       const data = await loadLedgerData(client, s.ledger.spreadsheetId);
       setState((cur) =>
         cur.status === "ready" && cur.ledger.spreadsheetId === s.ledger.spreadsheetId
-          ? { ...cur, family: data.members, problems: data.problems }
+          ? { ...cur, family: data.members, records: data.records, problems: data.problems }
           : cur,
       );
     },
@@ -195,9 +234,82 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
     [client, withReady],
   );
 
+  const saveRecord = useCallback(
+    (input: RecordInput, opts: SaveRecordOptions) =>
+      withReady(async (s) => {
+        const existing = opts.id ? s.records.find((r) => r.id === opts.id) : undefined;
+        if (opts.id && !existing) throw new Error("記録が見つかりません。画面を再読み込みしてください");
+        const now = new Date().toISOString();
+        const person = s.family.find((f) => f.id === input.personId);
+        const base = {
+          id: existing?.id ?? crypto.randomUUID(),
+          date: input.date,
+          personId: input.personId,
+          personName: person?.name ?? existing?.personName ?? "",
+          payee: input.payee.trim(),
+          category: input.category,
+          amount: parseAmount(input.amount) ?? 0,
+          reimbursed: input.reimbursed.trim() ? (parseAmount(input.reimbursed) ?? 0) : 0,
+          memo: input.memo.trim(),
+          source: existing?.source ?? ("manual" as const),
+          createdAt: existing?.createdAt ?? now,
+          updatedAt: now,
+        };
+        const kept = (existing?.receiptFileIds ?? []).filter((id) => !opts.removedFileIds.includes(id));
+        const contents = await Promise.all(opts.newFiles.map(prepareReceipt));
+        const uploaded = await uploadReceipts(client, cache, s.ledger, base, contents, kept.length);
+        const record: MedicalRecord = { ...base, receiptFileIds: [...kept, ...uploaded] };
+        try {
+          if (existing) await updateRecord(client, s.ledger.spreadsheetId, record);
+          else await addRecord(client, s.ledger.spreadsheetId, record);
+        } catch (e) {
+          await trashFiles(client, uploaded);
+          throw e;
+        }
+        if (existing) {
+          await trashFiles(client, opts.removedFileIds);
+          const renamed =
+            existing.date !== record.date || existing.payee !== record.payee || existing.amount !== record.amount;
+          // 名前の付け直しに失敗しても記録は保存済みのため、続行する
+          if (renamed || opts.removedFileIds.length > 0) await renameReceipts(client, record).catch(() => undefined);
+        }
+      }),
+    [client, cache, withReady],
+  );
+
+  const deleteRecordById = useCallback(
+    (id: string) =>
+      withReady(async (s) => {
+        const record = s.records.find((r) => r.id === id);
+        await deleteRecord(client, s.ledger.spreadsheetId, id);
+        if (record) await trashFiles(client, record.receiptFileIds);
+      }),
+    [client, withReady],
+  );
+
+  const loadReceipt = useCallback(
+    async (fileId: string) => {
+      const [meta, blob] = await Promise.all([client.getFileMeta(fileId), client.downloadFile(fileId)]);
+      return { blob, mimeType: meta.mimeType };
+    },
+    [client],
+  );
+
   const value = useMemo<LedgerContextValue>(
-    () => ({ state, year, setYear, reload, setup, saveMember, deleteMember, moveMember }),
-    [state, year, setYear, reload, setup, saveMember, deleteMember, moveMember],
+    () => ({
+      state,
+      year,
+      setYear,
+      reload,
+      setup,
+      saveMember,
+      deleteMember,
+      moveMember,
+      saveRecord,
+      deleteRecord: deleteRecordById,
+      loadReceipt,
+    }),
+    [state, year, setYear, reload, setup, saveMember, deleteMember, moveMember, saveRecord, deleteRecordById, loadReceipt],
   );
 
   return <LedgerContext.Provider value={value}>{children}</LedgerContext.Provider>;

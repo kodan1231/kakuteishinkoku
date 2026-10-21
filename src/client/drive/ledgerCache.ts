@@ -5,9 +5,15 @@ import { loadString, saveString } from "../lib/storage";
  * ドライブの検索は作成直後のファイルをすぐ返さないことがあるため、作成直後の再検索で見失わないようにする役割もある。
  */
 
+interface CachedLedger {
+  spreadsheetId: string;
+  yearFolderId: string;
+  receiptFolderId?: string;
+}
+
 interface CacheData {
   root?: { id: string; consentedAt?: string };
-  ledgers: Record<string, { spreadsheetId: string; yearFolderId: string }>;
+  ledgers: Record<string, CachedLedger>;
 }
 
 export class LedgerCache {
@@ -31,9 +37,12 @@ export class LedgerCache {
     this.save({ ...this.load(), root });
   }
 
-  setLedger(year: number, ledger: { spreadsheetId: string; yearFolderId: string } | undefined): void {
+  setLedger(year: number, ledger: CachedLedger | undefined): void {
     const data = this.load();
-    if (ledger) data.ledgers[year] = ledger;
+    if (ledger) {
+      const { spreadsheetId, yearFolderId, receiptFolderId } = ledger;
+      data.ledgers[year] = { spreadsheetId, yearFolderId, receiptFolderId };
+    }
     else delete data.ledgers[year];
     this.save(data);
   }

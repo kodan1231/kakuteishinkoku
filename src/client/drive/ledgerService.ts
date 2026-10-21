@@ -3,10 +3,8 @@ import type { LedgerCache } from "./ledgerCache";
 import {
   APP_ID,
   buildLedgerRequests,
-  checkHeader,
   familyRow,
   ledgerName,
-  MEDICAL_HEADERS,
   parseFamily,
   pickFamilySourceYear,
   ROOT_FOLDER_NAME,
@@ -15,9 +13,10 @@ import {
   type FamilyMember,
   type FamilyRow,
 } from "./ledger";
+import { medicalRow, parseMedical, receiptFileName, type MedicalRecord } from "./records";
 
 /**
- * ドライブ上のフォルダ・台帳の検索と作成、家族シートの読み書き。
+ * ドライブ上のフォルダ・台帳の検索と作成、家族・医療費シートの読み書き、領収書ファイルの保存。
  * ファイルは名前ではなく作成時に付けた appProperties で探すため、名前の変更や移動に影響されない。
  */
 
@@ -27,6 +26,8 @@ export interface Ledger {
   yearFolderId: string;
   rootFolderId: string;
 }
+
+const RECEIPT_FOLDER_NAME = "領収書";
 
 export interface OpenedLedger {
   ledger: Ledger;
@@ -136,17 +137,17 @@ function stripRow({ row: _row, ...m }: FamilyRow): FamilyMember {
   return m;
 }
 
-/** 家族と、台帳の構成の問題（見出しの変更・id の重複）を読み取る */
+/** 家族・医療費の記録と、台帳の構成の問題（見出しの変更・id の重複）を読み取る */
 export async function loadLedgerData(
   c: GoogleClient,
   spreadsheetId: string,
-): Promise<{ members: FamilyRow[]; problems: string[] }> {
+): Promise<{ members: FamilyRow[]; records: MedicalRecord[]; problems: string[] }> {
   let family: unknown[][];
-  let medicalHeader: unknown[][];
+  let medical: unknown[][];
   try {
-    [family, medicalHeader] = await c.batchGetValues(spreadsheetId, [
+    [family, medical] = await c.batchGetValues(spreadsheetId, [
       sheetRange(SHEET.family, "A1:E"),
-      sheetRange(SHEET.medical, "A1:N1"),
+      sheetRange(SHEET.medical, "A1:N"),
     ]);
   } catch (e) {
     // シート名が変えられた・消されたときは範囲を解釈できず 400 になる
@@ -155,9 +156,9 @@ export async function loadLedgerData(
     }
     throw e;
   }
-  const { members, problems } = parseFamily(family);
-  const medicalProblem = checkHeader(SHEET.medical, medicalHeader[0] ?? [], MEDICAL_HEADERS);
-  return { members, problems: medicalProblem ? [...problems, medicalProblem] : problems };
+  const f = parseFamily(family);
+  const m = parseMedical(medical);
+  return { members: f.members, records: m.records, problems: [...f.problems, ...m.problems] };
 }
 
 export async function addFamilyMember(c: GoogleClient, spreadsheetId: string, m: FamilyMember): Promise<void> {
@@ -165,27 +166,41 @@ export async function addFamilyMember(c: GoogleClient, spreadsheetId: string, m:
 }
 
 export async function updateFamilyMember(c: GoogleClient, spreadsheetId: string, m: FamilyMember): Promise<void> {
-  const row = (await familyRowFinder(c, spreadsheetId))(m.id);
+  const row = (await rowFinder(c, spreadsheetId, SHEET.family))(m.id);
   await c.updateValues(spreadsheetId, [{ range: sheetRange(SHEET.family, `A${row}:D${row}`), values: [familyRow(m).slice(0, 4)] }]);
 }
 
 export async function deleteFamilyMember(c: GoogleClient, spreadsheetId: string, id: string): Promise<void> {
-  const row = (await familyRowFinder(c, spreadsheetId))(id);
+  const row = (await rowFinder(c, spreadsheetId, SHEET.family))(id);
   await c.updateValues(spreadsheetId, [{ range: sheetRange(SHEET.family, `E${row}`), values: [[true]] }]);
 }
 
 /** 渡した順に並び順を 1, 2, 3… と振り直す */
 export async function reorderFamily(c: GoogleClient, spreadsheetId: string, orderedIds: string[]): Promise<void> {
-  const rowOf = await familyRowFinder(c, spreadsheetId);
+  const rowOf = await rowFinder(c, spreadsheetId, SHEET.family);
   await c.updateValues(
     spreadsheetId,
     orderedIds.map((id, i) => ({ range: sheetRange(SHEET.family, `D${rowOf(id)}`), values: [[i + 1]] })),
   );
 }
 
+export async function addRecord(c: GoogleClient, spreadsheetId: string, r: MedicalRecord): Promise<void> {
+  await c.appendValues(spreadsheetId, sheetRange(SHEET.medical, "A:N"), [medicalRow(r)]);
+}
+
+export async function updateRecord(c: GoogleClient, spreadsheetId: string, r: MedicalRecord): Promise<void> {
+  const row = (await rowFinder(c, spreadsheetId, SHEET.medical))(r.id);
+  await c.updateValues(spreadsheetId, [{ range: sheetRange(SHEET.medical, `A${row}:N${row}`), values: [medicalRow(r)] }]);
+}
+
+export async function deleteRecord(c: GoogleClient, spreadsheetId: string, id: string): Promise<void> {
+  const row = (await rowFinder(c, spreadsheetId, SHEET.medical))(id);
+  await c.updateValues(spreadsheetId, [{ range: sheetRange(SHEET.medical, `N${row}`), values: [[true]] }]);
+}
+
 /** 書き込みの直前に id から行番号を引き直す（手で行を並べ替えられても正しい行に書くため） */
-async function familyRowFinder(c: GoogleClient, spreadsheetId: string): Promise<(id: string) => number> {
-  const [values] = await c.batchGetValues(spreadsheetId, [sheetRange(SHEET.family, "A:A")]);
+async function rowFinder(c: GoogleClient, spreadsheetId: string, sheet: string): Promise<(id: string) => number> {
+  const [values] = await c.batchGetValues(spreadsheetId, [sheetRange(sheet, "A:A")]);
   const rows = new Map<string, number>();
   values.forEach((r, i) => {
     const id = String(r[0] ?? "").trim();
@@ -193,7 +208,75 @@ async function familyRowFinder(c: GoogleClient, spreadsheetId: string): Promise<
   });
   return (id) => {
     const row = rows.get(id);
-    if (!row) throw new Error("家族が台帳に見つかりません。画面を再読み込みしてください");
+    if (!row) throw new Error(`シート「${sheet}」に対象の行が見つかりません。画面を再読み込みしてください`);
     return row;
   };
+}
+
+/** 年度フォルダ内の「領収書」フォルダ。ID は端末にキャッシュする */
+async function ensureReceiptFolder(c: GoogleClient, cache: LedgerCache, ledger: Ledger): Promise<string> {
+  const cached = cache.load().ledgers[ledger.year];
+  if (cached?.receiptFolderId && (await c.isAlive(cached.receiptFolderId))) return cached.receiptFolderId;
+  const props = { app: APP_ID, type: "receiptFolder", year: String(ledger.year) };
+  const folder =
+    (await c.findFiles(props))[0] ??
+    (await c.createFile({ name: RECEIPT_FOLDER_NAME, mimeType: FOLDER_MIME, parents: [ledger.yearFolderId], appProperties: props }));
+  cache.setLedger(ledger.year, { ...ledger, receiptFolderId: folder.id });
+  return folder.id;
+}
+
+export interface ReceiptContent {
+  blob: Blob;
+  mimeType: string;
+}
+
+/** 領収書をアップロードし、ファイル ID を返す。index は記録内での通し番号の開始値 */
+export async function uploadReceipts(
+  c: GoogleClient,
+  cache: LedgerCache,
+  ledger: Ledger,
+  record: Pick<MedicalRecord, "id" | "date" | "payee" | "amount">,
+  contents: ReceiptContent[],
+  startIndex: number,
+): Promise<string[]> {
+  if (contents.length === 0) return [];
+  const folderId = await ensureReceiptFolder(c, cache, ledger);
+  const ids: string[] = [];
+  try {
+    for (const [i, content] of contents.entries()) {
+      const file = await c.uploadFile(
+        {
+          name: receiptFileName(record, startIndex + i, content.mimeType),
+          mimeType: content.mimeType,
+          parents: [folderId],
+          appProperties: { app: APP_ID, type: "receipt", recordId: record.id },
+        },
+        content.blob,
+      );
+      ids.push(file.id);
+    }
+  } catch (e) {
+    await trashFiles(c, ids);
+    throw e;
+  }
+  return ids;
+}
+
+/** 記録の内容に合わせて領収書のファイル名を付け直す */
+export async function renameReceipts(
+  c: GoogleClient,
+  record: Pick<MedicalRecord, "id" | "date" | "payee" | "amount" | "receiptFileIds">,
+): Promise<void> {
+  await Promise.all(
+    record.receiptFileIds.map(async (id, i) => {
+      const meta = await c.getFileMeta(id);
+      const name = receiptFileName(record, i, meta.mimeType);
+      if (meta.name !== name) await c.renameFile(id, name);
+    }),
+  );
+}
+
+/** ゴミ箱へ移す（失敗しても記録の保存は終わっているため無視する） */
+export async function trashFiles(c: GoogleClient, ids: string[]): Promise<void> {
+  await Promise.all(ids.map((id) => c.trashFile(id).catch(() => undefined)));
 }

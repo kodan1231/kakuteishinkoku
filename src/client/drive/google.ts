@@ -4,6 +4,7 @@
  */
 
 const DRIVE_FILES = "https://www.googleapis.com/drive/v3/files";
+const DRIVE_UPLOAD = "https://www.googleapis.com/upload/drive/v3/files";
 const SHEETS = "https://sheets.googleapis.com/v4/spreadsheets";
 const FILE_FIELDS = "id,name,createdTime,parents,appProperties";
 
@@ -56,6 +57,39 @@ export class GoogleClient {
 
   createFile(file: NewDriveFile): Promise<DriveFile> {
     return this.request<DriveFile>(`${DRIVE_FILES}?fields=${FILE_FIELDS}`, { method: "POST", body: JSON.stringify(file) });
+  }
+
+  /** メタデータと中身を1回のリクエストでアップロードする */
+  uploadFile(file: NewDriveFile, content: Blob): Promise<DriveFile> {
+    const boundary = `----kakuteishinkoku${crypto.randomUUID()}`;
+    const body = new Blob([
+      `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(file)}\r\n`,
+      `--${boundary}\r\nContent-Type: ${file.mimeType}\r\n\r\n`,
+      content,
+      `\r\n--${boundary}--`,
+    ]);
+    return this.request<DriveFile>(`${DRIVE_UPLOAD}?uploadType=multipart&fields=${FILE_FIELDS}`, {
+      method: "POST",
+      headers: { "Content-Type": `multipart/related; boundary=${boundary}` },
+      body,
+    });
+  }
+
+  getFileMeta(id: string): Promise<{ id: string; name: string; mimeType: string }> {
+    return this.request(`${DRIVE_FILES}/${id}?fields=id,name,mimeType`);
+  }
+
+  async renameFile(id: string, name: string): Promise<void> {
+    await this.request(`${DRIVE_FILES}/${id}`, { method: "PATCH", body: JSON.stringify({ name }) });
+  }
+
+  /** ファイルの中身（領収書の表示用） */
+  async downloadFile(id: string): Promise<Blob> {
+    const res = await fetch(`${DRIVE_FILES}/${id}?alt=media`, {
+      headers: { Authorization: `Bearer ${await this.getToken()}` },
+    });
+    if (!res.ok) throw toGoogleApiError(res.status, (await res.json().catch(() => ({}))) as GoogleErrorBody);
+    return res.blob();
   }
 
   /** ファイルが存在し、ゴミ箱に入っていないか */
@@ -112,7 +146,7 @@ export class GoogleClient {
   private async request<T>(url: string, init: RequestInit = {}): Promise<T> {
     const headers = new Headers(init.headers);
     headers.set("Authorization", `Bearer ${await this.getToken()}`);
-    if (init.body) headers.set("Content-Type", "application/json");
+    if (init.body && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
     const res = await fetch(url, { ...init, headers });
     const body = (await res.json().catch(() => ({}))) as GoogleErrorBody;
     if (!res.ok) throw toGoogleApiError(res.status, body);
