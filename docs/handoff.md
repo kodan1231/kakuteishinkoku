@@ -31,17 +31,17 @@
 詳細な手順は [`docs/setup.md`](./setup.md) を参照。
 
 ### 3.1 Google Cloud（Step 2 で必要）
-- [ ] 本アプリ専用の新規プロジェクトを作成（既存アプリとは分ける）
-- [ ] Google Drive API・Google Sheets API を有効化
-- [ ] OAuth 同意画面: 外部、スコープ `openid` `email` `profile` `drive.file`、**「本番環境」で公開**（テストのままだとログインが7日で切れる）
-  - 審査を求められた場合はスクリーンショットを共有してもらう
-- [ ] OAuth クライアント（ウェブ アプリケーション）を作成
+- [x] 本アプリ専用の新規プロジェクトを作成（プロジェクトID `kakuteishinkoku2426508`）
+- [x] Google Drive API・Google Sheets API を有効化
+- [x] OAuth 同意画面: 外部、スコープ `openid` `email` `profile` `drive.file`、**「本番環境」で公開**（審査なしで公開できた）
+  - 公開にはブランディングのホームページ・プライバシーポリシー・利用規約・承認済みドメインの入力が必要だった（`/privacy` `/terms` を追加）
+- [x] OAuth クライアント（ウェブ アプリケーション）を作成
   - リダイレクトURI: `https://kakuteishinkoku.<サブドメイン>.workers.dev/auth/callback`（＋`http://localhost:5173/auth/callback`）
 
 ### 3.2 Cloudflare ダッシュボード（Worker `kakuteishinkoku`）
 - [x] ビルド設定: 本番ブランチ `main`、ビルドコマンド `npm run build`、デプロイコマンド `npx wrangler deploy`（2026-10-22 デプロイ成功）
   - マイグレーションは自動デプロイに含めず、手元で `npm run db:migrate:remote` を実行する運用（setup.md 参照）
-- [ ] 変数とシークレット
+- [x] 変数とシークレット（2026-10-22 に `wrangler secret bulk` で4つともシークレットとして設定。値は手元の `.dev.vars` にもある）
 
   | 名前 | 種類 |
   |---|---|
@@ -52,7 +52,7 @@
 
 ### 3.3 動作確認と結果の共有
 - [ ] **Step 0: OCR 検証** — `/lab/ocr` で領収書写真を読み取り、モデル別集計表のスクショと Workers AI の Neuron 消費量を共有
-- [ ] **Step 2: ログイン・招待** — `docs/setup.md` の「Step 2 の動作確認」の6項目
+- [ ] **Step 2: ログイン・招待** — `docs/setup.md` の「Step 2 の動作確認」の6項目（1. 管理者ログインは 2026-10-22 に確認済み）
   - 特に: 1時間以上後に開き直してもログイン不要か／iPhone のホーム画面アプリ（PWA）からログインできるか
 
 ---
