@@ -1,16 +1,21 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import { BrowserRouter, Route, Routes } from "react-router";
+import { BrowserRouter, Outlet, Route, Routes } from "react-router";
 import { AuthProvider } from "./auth/AuthProvider";
 import { RequireAuth } from "./components/RequireAuth";
+import { RequireLedger } from "./components/RequireLedger";
+import { LedgerProvider } from "./drive/LedgerProvider";
 import "./index.css";
 import { Admin } from "./pages/Admin";
 import { AuthCallback } from "./pages/AuthCallback";
+import { FamilySettings } from "./pages/FamilySettings";
 import { Home } from "./pages/Home";
 import { Invite } from "./pages/Invite";
 import { Login } from "./pages/Login";
 import { OcrLab } from "./pages/OcrLab";
 import { Privacy } from "./pages/Privacy";
+import { Settings } from "./pages/Settings";
+import { Setup } from "./pages/Setup";
 import { Terms } from "./pages/Terms";
 
 createRoot(document.getElementById("root")!).render(
@@ -25,13 +30,21 @@ createRoot(document.getElementById("root")!).render(
           <Route path="/privacy" element={<Privacy />} />
           <Route path="/terms" element={<Terms />} />
           <Route
-            path="/"
             element={
               <RequireAuth>
-                <Home />
+                <LedgerProvider>
+                  <Outlet />
+                </LedgerProvider>
               </RequireAuth>
             }
-          />
+          >
+            <Route path="/setup" element={<Setup />} />
+            <Route element={<RequireLedger />}>
+              <Route path="/" element={<Home />} />
+              <Route path="/settings" element={<Settings />} />
+              <Route path="/settings/family" element={<FamilySettings />} />
+            </Route>
+          </Route>
           <Route
             path="/admin"
             element={

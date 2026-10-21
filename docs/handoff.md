@@ -75,8 +75,9 @@
 |---|---|---|
 | 0 | 検証（OCR 精度、医療費集計フォーム、OAuth 本番公開、PWA ログイン） | 検証ページ実装済み・**利用者の結果待ち**。集計フォームの列構成は確認済み（design.md 7.2） |
 | 1 | 土台（Hono + React + Vite、D1 マイグレーション、CI） | 完了 |
-| 2 | 認証・招待 | 実装済み・**実機での動作確認待ち**（本物の Google ログインは未実施） |
-| 3〜8 | ドライブ初期化・記録・OCR・一覧・集計出力・PWA | 未着手 |
+| 2 | 認証・招待 | ログイン・招待は実機で確認済み（2026-10-22）。1時間後の自動再ログインと iOS PWA は未確認 |
+| 3 | ドライブ初期化・台帳作成・家族設定 | 実装済み（2026-10-22）・**実機での動作確認待ち** |
+| 4〜8 | 記録・OCR・一覧・集計出力・PWA | 未着手 |
 
 ### 4.3 リソース
 - Cloudflare Worker: `kakuteishinkoku`（作成済み、GitHub 連携済み、`main` で自動デプロイ）
@@ -92,12 +93,14 @@ src/server/   Worker（Hono）
   middleware/ requireUser / requireAdmin（Bearer IDトークン）
 src/client/   React
   auth/       AuthProvider（ログイン・自動更新）, tokenStore（IndexedDB 暗号化保存）, pkce
-  pages/      Login, AuthCallback, Invite, Home, Admin, OcrLab
+  drive/      google（Drive/Sheets API）, ledger（台帳の構成・検証）, ledgerService（検索・作成・家族の読み書き）,
+              ledgerCache（ID のキャッシュ）, LedgerProvider（年度・台帳・家族の状態）
+  pages/      Login, AuthCallback, Invite, Setup, Home, Settings, FamilySettings, Admin, OcrLab, Privacy, Terms
 src/shared/   型・定数
 migrations/   D1
 docs/         design.md（設計）, setup.md（手順）, handoff.md（このファイル）
 ```
-- チェック: `npm run typecheck` / `npm test`（16件）/ `npx vite build`
+- チェック: `npm run typecheck` / `npm test`（29件）/ `npx vite build`
 - Free プランの CPU 10ms 制限のため、重い処理（画像縮小・xlsx 生成）は端末側で行う方針
 
 ---
@@ -108,10 +111,11 @@ docs/         design.md（設計）, setup.md（手順）, handoff.md（この�
    - 候補: Llama 4 Scout / Gemma 3 12B / Gemma 4 26B / Mistral Small 3.1 / Llama 3.2 Vision / Kimi K2.6 / Qwen 3.8（画像対応か要確認）
    - 1日あたりの OCR 上限回数（初期案 30回/人）も消費量から決める
 2. ~~医療費集計フォームの最新版の列構成を確認~~ → 2026-10-22 確認済み（design.md 7.2 に記載）。作成コーナーでの読み込み試験は未実施
-3. **Step 2 の実機確認で問題があれば修正**（特に iOS PWA でのリダイレクトログイン）
-4. **Step 3（ドライブ初期化・台帳作成・家族設定）の詳細を利用者と確認 → 承認後に実装**
-   - 確認したい点の例: 台帳のファイル名・フォルダ名、家族の初期値（本人を自動登録するか）、年度の切り替え方
-5. Step 0 完了後、`OCR_LAB_KEY` の削除と `/lab/ocr`・`routes/ocrLab.ts` の撤去（本番 OCR API に置き換え）
+3. **Step 2 の残りの実機確認**（1時間後の自動再ログイン、iOS PWA でのリダイレクトログイン）で問題があれば修正
+4. **Step 3 の実機確認**（初回設定 → 台帳作成、家族の追加・編集・並び替え・削除、年度切り替えでの台帳自動作成、別端末で同じ台帳が開けるか）
+   - 決定事項は design.md 5.2・5.3・8章に反映済み（同意してから作成、本人の名前は事前確認、年度は確定申告期間に準ずる）
+5. **Step 4（記録）の詳細を利用者と確認 → 承認後に実装**
+6. Step 0 完了後、`OCR_LAB_KEY` の削除と `/lab/ocr`・`routes/ocrLab.ts` の撤去（本番 OCR API に置き換え）
 
 ### 利用者に未確認の質問
 - なし（`ADMIN_EMAIL` は `kodan1231@gmail.com` に決定）

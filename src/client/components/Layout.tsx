@@ -26,5 +26,14 @@ export function ErrorText({ children }: { children: ReactNode }) {
   return <p className="rounded bg-red-50 p-3 text-sm text-red-800">{children}</p>;
 }
 
+export function WarningText({ children }: { children: ReactNode }) {
+  return <p className="rounded bg-amber-50 p-3 text-sm text-amber-900">{children}</p>;
+}
+
+export function NoticeText({ children }: { children: ReactNode }) {
+  return <p className="rounded bg-teal-50 p-3 text-sm text-teal-900">{children}</p>;
+}
+
+export const inputClass = "mt-1 block w-full rounded border px-2 py-1";
 export const buttonClass = "rounded bg-teal-700 px-4 py-2 text-white disabled:opacity-40";
 export const subButtonClass = "rounded border border-gray-300 px-3 py-1 text-sm disabled:opacity-40";
