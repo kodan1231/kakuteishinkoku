@@ -1,0 +1,25 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "kakuteishinkoku",
+  "main": "./src/server/index.ts",
+  "compatibility_date": "2026-10-01",
+  "assets": {
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*"]
+  },
+  "ai": {
+    "binding": "AI"
+  },
+  // D1 は Step 2 で使用する。データベース作成後に database_id を設定してコメントを外す。
+  // "d1_databases": [
+  //   {
+  //     "binding": "DB",
+  //     "database_name": "kakuteishinkoku",
+  //     "database_id": "<database_id>",
+  //     "migrations_dir": "migrations"
+  //   }
+  // ],
+  "observability": {
+    "enabled": true
+  }
+}

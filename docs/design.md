@@ -1,6 +1,6 @@
 # 確定申告サポート 設計書（ドラフト v0.2）
 
-> ステータス: **レビュー待ち**（承認後に実装開始）
+> ステータス: **承認済み**（Step 0 / Step 1 着手）
 > 最終更新: 2026-10-21
 >
 > v0.2 の主な変更: サーバー（Worker）を「招待・許可アカウントの管理」「OCR」「トークン交換の中継」だけに絞り、
@@ -31,8 +31,8 @@
 
 | 項目 | 内容 |
 |---|---|
-| アプリ名 | 確定申告サポート（Worker 名: `kakutei-support`） |
-| URL | `https://kakutei-support.<subdomain>.workers.dev` |
+| アプリ名 | 確定申告サポート（Worker 名: `kakuteishinkoku`、Cloudflare 上に作成済み） |
+| URL | `https://kakuteishinkoku.<subdomain>.workers.dev` |
 | 費用 | **すべて無料枠**で運用（クレジットカード登録が必要なサービスは使わない） |
 | Cloudflare | Free プラン（既存アカウントを流用、リソースは本アプリ専用に新規作成） |
 | Google Cloud | 本アプリ専用のプロジェクトを新規作成（既存アプリに影響を与えない） |
@@ -238,7 +238,7 @@ CREATE TABLE ocr_usage (
 ```
 - ファイル名に「日付_支払先_金額」を含め、ドライブ上でも検索しやすくする
 - 年度フォルダ・台帳は、その年の記録が初めて保存されたときに自動作成
-- **ファイルの見つけ方**: 作成時にドライブの `appProperties`（例: `app=kakutei-support, type=ledger, year=2026`）を付けておき、端末はこの条件で検索して見つける。見つけたIDは localStorage にキャッシュ
+- **ファイルの見つけ方**: 作成時にドライブの `appProperties`（例: `app=kakuteishinkoku, type=ledger, year=2026`）を付けておき、端末はこの条件で検索して見つける。見つけたIDは localStorage にキャッシュ
   - 別の端末からログインしても同じファイルにたどり着ける（D1 に記録する必要がない）
 
 ### 5.3 台帳スプレッドシート（年度ごと）
@@ -249,7 +249,7 @@ CREATE TABLE ocr_usage (
 | key | value |
 |---|---|
 | schema_version | 1 |
-| app | kakutei-support |
+| app | kakuteishinkoku |
 | year | 2026 |
 
 #### シート「家族」
@@ -306,7 +306,7 @@ CREATE TABLE ocr_usage (
 
 ### 6.2 写真からの読み取り（OCR）
 - **Cloudflare Workers AI の画像対応モデル**を使用（無料枠内）
-  - 候補: Llama 3.2 Vision、Gemma 3、Mistral Small 3.1 など → **Step 0 で実際の領収書を使って精度を比較して決定**
+  - 候補: Llama 4 Scout、Gemma 3 / Gemma 4、Mistral Small 3.1、Llama 3.2 Vision、Kimi K2.6、Qwen 3.8 → **Step 0 で実際の領収書を使って精度を比較して決定**（検証ページ `/lab/ocr`）
 - 端末で OCR 用の小さい画像（長辺 1024px 程度）を作り、`POST /api/ocr` に送る
   - Worker は画像を保存せず、読み取り結果だけを返す
 - モデルへの指示: 領収書から `支払日` `支払先` `金額（合計）` `区分の推定` を JSON で返させる
@@ -400,8 +400,8 @@ CREATE TABLE ocr_usage (
    2. Google Drive API・Google Sheets API を有効化
    3. OAuth 同意画面: 外部ユーザー向け、アプリ名「確定申告サポート」、スコープ `openid` `email` `profile` `drive.file`、「本番環境」で公開
    4. OAuth クライアントID（ウェブアプリ）を作成
-      - 承認済みの JavaScript 生成元: `https://kakutei-support.<subdomain>.workers.dev`（＋ローカル開発用）
-      - リダイレクトURI: `https://kakutei-support.<subdomain>.workers.dev/auth/callback`（＋ローカル開発用）
+      - 承認済みの JavaScript 生成元: `https://kakuteishinkoku.<subdomain>.workers.dev`（＋ローカル開発用）
+      - リダイレクトURI: `https://kakuteishinkoku.<subdomain>.workers.dev/auth/callback`（＋ローカル開発用）
 2. **Cloudflare**
    1. D1 データベースを新規作成（本アプリ専用）
    2. Worker の設定: `GOOGLE_CLIENT_ID`（変数）、`GOOGLE_CLIENT_SECRET`（Secret）、`ADMIN_EMAIL`（変数）
