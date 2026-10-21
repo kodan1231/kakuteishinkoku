@@ -19,13 +19,14 @@ Cloudflare ダッシュボード → Workers & Pages → `kakuteishinkoku` → �
 |---|---|
 | 本番ブランチ | `main` |
 | ビルドコマンド | `npm run build` |
-| デプロイコマンド | `npm run db:migrate:remote && npx wrangler deploy` |
+| デプロイコマンド | `npx wrangler deploy` |
 | ルートディレクトリ | `/`（空欄） |
 
 - `npm run build` で `dist/` にビルド済みの Worker と設定が出力され、`wrangler deploy` はそれを使う
+  - ビルドコマンドが空だと `The assets property ... is missing the required directory property` で失敗する
 - Worker 名はリポジトリの `wrangler.jsonc` の `name`（`kakuteishinkoku`）と一致している必要がある
-- デプロイコマンドの前半で D1 のマイグレーション（テーブル作成・変更）を適用する。適用済みのものはスキップされる
-  - ビルド用 API トークンに D1 の権限がなく失敗する場合は、デプロイコマンドを `npx wrangler deploy` に戻し、手元で `npm run db:migrate:remote` を実行する
+- **D1 のマイグレーションは自動デプロイでは適用しない。** `migrations/` を追加したら、push の前に手元（`wrangler login` 済みの PC）で `npm run db:migrate:remote` を実行する。適用済みのものはスキップされる
+  - 確認プロンプトを出さずに実行する場合は環境変数 `CI=true` を付ける
 - 手元から手動でデプロイする場合は `npm run db:migrate:remote && npm run deploy`
 
 ## 変数とシークレット

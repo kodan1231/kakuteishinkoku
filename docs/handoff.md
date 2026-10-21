@@ -39,8 +39,8 @@
   - リダイレクトURI: `https://kakuteishinkoku.<サブドメイン>.workers.dev/auth/callback`（＋`http://localhost:5173/auth/callback`）
 
 ### 3.2 Cloudflare ダッシュボード（Worker `kakuteishinkoku`）
-- [ ] ビルド設定: 本番ブランチ `main`、ビルドコマンド `npm run build`、デプロイコマンド `npm run db:migrate:remote && npx wrangler deploy`
-  - D1 権限不足で失敗する場合は、デプロイコマンドを `npx wrangler deploy` に戻し、手元で `npm run db:migrate:remote` を1回実行
+- [x] ビルド設定: 本番ブランチ `main`、ビルドコマンド `npm run build`、デプロイコマンド `npx wrangler deploy`（2026-10-22 デプロイ成功）
+  - マイグレーションは自動デプロイに含めず、手元で `npm run db:migrate:remote` を実行する運用（setup.md 参照）
 - [ ] 変数とシークレット
 
   | 名前 | 種類 |
@@ -80,7 +80,8 @@
 
 ### 4.3 リソース
 - Cloudflare Worker: `kakuteishinkoku`（作成済み、GitHub 連携済み、`main` で自動デプロイ）
-- D1: `kakuteishinkoku`（`database_id: 3c5208f4-f598-49bf-af85-be36af08dc85`、`wrangler.jsonc` に設定済み、マイグレーション未適用）
+- D1: `kakuteishinkoku`（`database_id: 3c5208f4-f598-49bf-af85-be36af08dc85`、`wrangler.jsonc` に設定済み、`0001_init.sql` を 2026-10-22 に適用済み）
+- URL: `https://kakuteishinkoku.kodan1231.workers.dev`
 - 既存アプリ `tamahouse0930/checkinmanagement` の認証コードは参照できなかった（GitHub 権限なし）。必須ではない
 
 ### 4.4 コード構成
