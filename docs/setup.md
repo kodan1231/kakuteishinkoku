@@ -48,6 +48,11 @@ Cloudflare ダッシュボード → Workers & Pages → `kakuteishinkoku` → �
 2. 「API とサービス」→「ライブラリ」で **Google Drive API** と **Google Sheets API** を有効化（Step 3 以降で使用）
 3. 「Google Auth Platform」（旧「OAuth 同意画面」）
    - ブランディング: アプリ名「確定申告サポート」、サポートメール、デベロッパーの連絡先
+     - 以下が空だと「アプリを公開」が押せない
+     - ホームページ: `https://kakuteishinkoku.<サブドメイン>.workers.dev/login`
+     - プライバシーポリシー: `https://kakuteishinkoku.<サブドメイン>.workers.dev/privacy`
+     - 利用規約: `https://kakuteishinkoku.<サブドメイン>.workers.dev/terms`
+     - 承認済みドメイン: `<サブドメイン>.workers.dev`
    - 対象: **外部**
    - データアクセス: スコープを追加 → `openid` `.../auth/userinfo.email` `.../auth/userinfo.profile` `.../auth/drive.file`
    - 対象 → 公開ステータスを **「本番環境に公開」**（「テスト」のままだとログインが7日で切れる）

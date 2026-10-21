@@ -10,6 +10,8 @@ import { Home } from "./pages/Home";
 import { Invite } from "./pages/Invite";
 import { Login } from "./pages/Login";
 import { OcrLab } from "./pages/OcrLab";
+import { Privacy } from "./pages/Privacy";
+import { Terms } from "./pages/Terms";
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
@@ -20,6 +22,8 @@ createRoot(document.getElementById("root")!).render(
           <Route path="/auth/callback" element={<AuthCallback />} />
           <Route path="/invite/:token" element={<Invite />} />
           <Route path="/lab/ocr" element={<OcrLab />} />
+          <Route path="/privacy" element={<Privacy />} />
+          <Route path="/terms" element={<Terms />} />
           <Route
             path="/"
             element={

@@ -9,6 +9,15 @@ export function Page({ title, children }: { title?: string; children: ReactNode 
   );
 }
 
+export function Section({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <section className="space-y-1">
+      <h2 className="font-bold">{title}</h2>
+      {children}
+    </section>
+  );
+}
+
 export function Loading({ label = "読み込み中…" }: { label?: string }) {
   return <p className="p-8 text-center text-gray-500">{label}</p>;
 }
