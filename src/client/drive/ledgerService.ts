@@ -8,6 +8,9 @@ import {
   parseFamily,
   pickFamilySourceYear,
   ROOT_FOLDER_NAME,
+  MEDICAL_HEADERS,
+  MEDICAL_LAST_COLUMN,
+  readSchemaVersion,
   SHEET,
   sheetRange,
   type FamilyMember,
@@ -144,21 +147,36 @@ export async function loadLedgerData(
 ): Promise<{ members: FamilyRow[]; records: MedicalRecord[]; problems: string[] }> {
   let family: unknown[][];
   let medical: unknown[][];
+  let meta: unknown[][];
   try {
-    [family, medical] = await c.batchGetValues(spreadsheetId, [
+    [family, medical, meta] = await c.batchGetValues(spreadsheetId, [
       sheetRange(SHEET.family, "A1:E"),
-      sheetRange(SHEET.medical, "A1:N"),
+      sheetRange(SHEET.medical, `A1:${MEDICAL_LAST_COLUMN}`),
+      sheetRange(SHEET.meta, "A1:B"),
     ]);
   } catch (e) {
     // シート名が変えられた・消されたときは範囲を解釈できず 400 になる
     if (e instanceof GoogleApiError && e.status === 400) {
-      throw new Error(`台帳のシート（${SHEET.medical}・${SHEET.family}）が見つかりません。シート名を元に戻してください`);
+      throw new Error(`台帳のシート（${SHEET.medical}・${SHEET.family}・${SHEET.meta}）が見つかりません。シート名を元に戻してください`);
     }
     throw e;
+  }
+  const schema = readSchemaVersion(meta);
+  if (schema?.version === 1) {
+    await migrateToV2(c, spreadsheetId, schema.row);
+    medical[0] = MEDICAL_HEADERS;
   }
   const f = parseFamily(family);
   const m = parseMedical(medical);
   return { members: f.members, records: m.records, problems: [...f.problems, ...m.problems] };
+}
+
+/** 版1 → 2: 医療費シートに「状態」列の見出しを追加する（既存の行は空欄＝確定のまま） */
+async function migrateToV2(c: GoogleClient, spreadsheetId: string, versionRow: number): Promise<void> {
+  await c.updateValues(spreadsheetId, [
+    { range: sheetRange(SHEET.medical, `${MEDICAL_LAST_COLUMN}1`), values: [[MEDICAL_HEADERS[MEDICAL_HEADERS.length - 1]]] },
+    { range: sheetRange(SHEET.meta, `B${versionRow}`), values: [[2]] },
+  ]);
 }
 
 export async function addFamilyMember(c: GoogleClient, spreadsheetId: string, m: FamilyMember): Promise<void> {
@@ -186,12 +204,14 @@ export async function reorderFamily(c: GoogleClient, spreadsheetId: string, orde
 
 /** 複数の記録（診療と交通費など）を1回の書き込みで追加する */
 export async function addRecords(c: GoogleClient, spreadsheetId: string, records: MedicalRecord[]): Promise<void> {
-  await c.appendValues(spreadsheetId, sheetRange(SHEET.medical, "A:N"), records.map(medicalRow));
+  await c.appendValues(spreadsheetId, sheetRange(SHEET.medical, `A:${MEDICAL_LAST_COLUMN}`), records.map(medicalRow));
 }
 
 export async function updateRecord(c: GoogleClient, spreadsheetId: string, r: MedicalRecord): Promise<void> {
   const row = (await rowFinder(c, spreadsheetId, SHEET.medical))(r.id);
-  await c.updateValues(spreadsheetId, [{ range: sheetRange(SHEET.medical, `A${row}:N${row}`), values: [medicalRow(r)] }]);
+  await c.updateValues(spreadsheetId, [
+    { range: sheetRange(SHEET.medical, `A${row}:${MEDICAL_LAST_COLUMN}${row}`), values: [medicalRow(r)] },
+  ]);
 }
 
 export async function deleteRecord(c: GoogleClient, spreadsheetId: string, id: string): Promise<void> {

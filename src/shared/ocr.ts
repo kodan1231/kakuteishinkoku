@@ -4,9 +4,37 @@ import { MEDICAL_CATEGORIES } from "./medical";
 export interface ReceiptFields {
   date: string | null; // YYYY-MM-DD
   payee: string | null;
+  /** 支払先の候補（確からしい順。先頭は payee と同じ） */
+  payeeCandidates: string[];
   amount: number | null;
   category: string | null;
   confidence: string | null;
+  /** 読み取りに自信がない項目 */
+  uncertain: ("date" | "payee" | "amount")[];
+}
+
+/** 本番の読み取りに使うモデル（Step 0 の検証で決定） */
+export const OCR_MODEL = "@cf/mistralai/mistral-small-3.1-24b-instruct";
+/** 1人1日あたりの読み取り回数の上限（日付は日本時間） */
+export const OCR_DAILY_LIMIT = 30;
+/** 読み取り用に縮小する画像の長辺（px） */
+export const OCR_IMAGE_MAX_EDGE = 1024;
+
+export interface OcrRequest {
+  /** data:image/jpeg;base64,... 形式 */
+  image: string;
+}
+
+export interface OcrUsage {
+  used: number;
+  limit: number;
+  remaining: number;
+}
+
+export interface OcrResponse {
+  /** 読み取れなかった場合は null */
+  fields: ReceiptFields | null;
+  usage: OcrUsage;
 }
 
 export interface OcrLabRequest {
@@ -38,13 +66,18 @@ export const OCR_CANDIDATE_MODELS = [
 
 export const OCR_PROMPT = `この画像は日本の領収書またはレシートです。次の項目を読み取り、JSON オブジェクトだけを出力してください。説明文やコードブロックは不要です。
 
-{"date": "支払日（YYYY-MM-DD）", "payee": "発行元（病院・薬局・店舗などの名称）", "amount": 支払った合計金額（円、整数）, "category": "区分", "confidence": "high|medium|low"}
+{"date": "支払日（YYYY-MM-DD）", "payee": "発行元の名称", "payee_candidates": ["発行元の候補（確からしい順、最大3つ）"], "amount": 支払った合計金額（円、整数）, "category": "区分", "confidence": "high|medium|low", "uncertain": ["自信がない項目（date / payee / amount）"]}
 
 ルール:
 - 和暦（令和など）は西暦に変換する
+- payee はこの領収書を発行した病院・クリニック・薬局・店舗の名称。押印・住所・電話番号の近くに書かれていることが多い
+  - 調剤薬局の領収書にある「保険医療機関」「処方元」などの病院名は発行元ではないので payee にしない（候補の2番目以降に入れてよい）
+  - 患者名・宛名・会社名は payee にも候補にも入れない
+  - 名称は省略せず、領収書の表記どおりに書く
+- payee_candidates には、領収書に書かれた医療機関・薬局の名称を確からしい順に入れる（先頭は payee と同じ）
 - amount は「合計」「領収金額」「お支払い」「請求額」の金額を優先する。カンマや「円」「¥」は付けない
 - category は次のいずれか: ${[...MEDICAL_CATEGORIES, "医療費以外"].join(" / ")}
   - 病院・クリニック・歯科の窓口支払い → 診療・治療
-  - 薬局・ドラッグストアでの薬 → 医薬品購入
+  - 薬局・調剤薬局・ドラッグストアでの支払い（処方箋による調剤を含む） → 医薬品購入
 - 読み取れない項目は null にする
-- confidence は読み取り全体の確からしさ`;
+- confidence は読み取り全体の確からしさ。uncertain には、かすれ・手書き・複数の候補などで自信がない項目を入れる`;

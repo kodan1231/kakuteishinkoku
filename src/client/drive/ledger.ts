@@ -4,7 +4,8 @@ import type { CellValue } from "./google";
 
 export const APP_ID = "kakuteishinkoku";
 export const ROOT_FOLDER_NAME = "確定申告サポート";
-export const LEDGER_SCHEMA_VERSION = 1;
+/** 2: 医療費シートに「状態」列（一時保存）を追加 */
+export const LEDGER_SCHEMA_VERSION = 2;
 
 export const SHEET = { medical: "医療費", family: "家族", settings: "設定", meta: "_meta" } as const;
 type SheetKey = keyof typeof SHEET;
@@ -24,7 +25,10 @@ export const MEDICAL_HEADERS = [
   "作成日時",
   "更新日時",
   "削除済",
+  "状態",
 ];
+/** 医療費シートの最終列（A1 形式） */
+export const MEDICAL_LAST_COLUMN = "O";
 export const FAMILY_HEADERS = ["id", "氏名", "続柄", "並び順", "削除済"];
 const KEY_VALUE_HEADERS = ["key", "value"];
 
@@ -163,6 +167,14 @@ export function parseFamily(values: unknown[][]): { members: FamilyRow[]; proble
   });
   members.sort((a, b) => a.order - b.order || a.row - b.row);
   return { members, problems };
+}
+
+/** _meta シートの値から台帳の版と、その行番号（1始まり）を読む。見つからなければ null */
+export function readSchemaVersion(meta: unknown[][]): { version: number; row: number } | null {
+  const i = meta.findIndex((r) => r[0] === "schema_version");
+  if (i < 0) return null;
+  const version = Number(meta[i][1]);
+  return Number.isFinite(version) ? { version, row: i + 1 } : null;
 }
 
 /** 新しい年度の家族のコピー元。前年度を優先し、なければ近い年度（同じ近さなら過去の年度） */

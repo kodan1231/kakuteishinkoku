@@ -77,8 +77,9 @@
 | 1 | 土台（Hono + React + Vite、D1 マイグレーション、CI） | 完了 |
 | 2 | 認証・招待 | ログイン・招待は実機で確認済み（2026-10-22）。1時間後の自動再ログインと iOS PWA は未確認 |
 | 3 | ドライブ初期化・台帳作成・家族設定 | 実機で確認済み（初回設定・家族設定・ドライブ/台帳のリンク）。年度切り替えでの自動作成と別端末は未確認 |
-| 4 | 記録（手入力・領収書の添付・一覧） | 実装済み（2026-10-22）・**実機での動作確認待ち** |
-| 5〜8 | OCR・一覧の絞り込み・集計出力・PWA | 未着手 |
+| 4 | 記録（手入力・領収書の添付・一覧） | 実機で確認済み（2026-10-25）。指摘を受けて日付のリール・通院交通費の同時入力・前回の呼び出し・領収書の保存を追加 |
+| 5 | 撮影して入力（OCR）・一時保存 | 実装済み（2026-10-25）・**実機での動作確認待ち**。モデルは Mistral Small 3.1 |
+| 6〜8 | 一覧の絞り込み・集計出力・PWA | 未着手 |
 
 ### 4.3 リソース
 - Cloudflare Worker: `kakuteishinkoku`（作成済み、GitHub 連携済み、`main` で自動デプロイ）
@@ -89,7 +90,7 @@
 ### 4.4 コード構成
 ```
 src/server/   Worker（Hono）
-  routes/     auth（トークン中継）, invites, admin, ocrLab（Step 0 用、後で削除）
+  routes/     auth（トークン中継）, invites, admin, ocr（領収書の読み取り・利用回数）, ocrLab（Step 0 用、後で削除）
   lib/        idToken（Google IDトークン検証）, google（OAuth）, db（D1）, session（利用可否判定）, ocr
   middleware/ requireUser / requireAdmin（Bearer IDトークン）
 src/client/   React
@@ -102,7 +103,7 @@ src/shared/   型・定数
 migrations/   D1
 docs/         design.md（設計）, setup.md（手順）, handoff.md（このファイル）
 ```
-- チェック: `npm run typecheck` / `npm test`（41件）/ `npx vite build`
+- チェック: `npm run typecheck` / `npm test`（56件）/ `npx vite build`
 - Free プランの CPU 10ms 制限のため、重い処理（画像縮小・xlsx 生成）は端末側で行う方針
 
 ---
@@ -115,10 +116,10 @@ docs/         design.md（設計）, setup.md（手順）, handoff.md（この�
 2. ~~医療費集計フォームの最新版の列構成を確認~~ → 2026-10-22 確認済み（design.md 7.2 に記載）。作成コーナーでの読み込み試験は未実施
 3. **Step 2 の残りの実機確認**（1時間後の自動再ログイン、iOS PWA でのリダイレクトログイン）で問題があれば修正
 4. **Step 3 の残りの実機確認**（年度切り替えでの台帳自動作成、別端末で同じ台帳が開けるか）
-5. **Step 4 の実機確認**（記録の追加・編集・削除、写真/PDF の添付・削除、ファイル名の付け直し、ゴミ箱への移動）
-   - 決定事項は design.md 5.3・6.1・6.1a・8章に反映済み
-6. **Step 5（OCR）は Step 0 の結果待ち**。Step 6（一覧の絞り込み）・7（集計出力）の詳細確認を先に進めてもよい
-7. Step 0 完了後、`OCR_LAB_KEY` の削除と `/lab/ocr`・`routes/ocrLab.ts` の撤去（本番 OCR API に置き換え）
+5. **Step 5 の実機確認**（撮影して入力、支払先の候補、年度違いの警告、交通費の自動入力、一時保存 → 続きから確定、既存台帳の版2への移行）
+   - 決定事項は design.md 5.3・6.1a・6.2・6.3 に反映済み
+6. **Step 6（一覧の絞り込み）・7（集計出力）の詳細を利用者と確認 → 承認後に実装**
+7. Step 5 の完成時に、`OCR_LAB_KEY` の削除と `/lab/ocr`・`routes/ocrLab.ts` の撤去を**利用者に提案する**（利用者の希望で、完成時に改めて提案してから行う）
 
 ### 利用者に未確認の質問
 - なし（`ADMIN_EMAIL` は `kodan1231@gmail.com` に決定）

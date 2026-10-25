@@ -35,6 +35,34 @@ export function findUserBySub(db: D1Database, sub: string): Promise<UserRow | nu
   return db.prepare("SELECT * FROM allowed_users WHERE google_sub = ?").bind(sub).first<UserRow>();
 }
 
+/** 日本時間の日付（YYYY-MM-DD）。OCR の利用回数の区切りに使う */
+export function jstDate(now: number): string {
+  return new Date(now + 9 * 3_600_000).toISOString().slice(0, 10);
+}
+
+export async function getOcrUsage(db: D1Database, userId: string, date: string): Promise<number> {
+  const row = await db.prepare("SELECT count FROM ocr_usage WHERE user_id = ? AND date = ?").bind(userId, date).first<{ count: number }>();
+  return row?.count ?? 0;
+}
+
+/** 上限未満なら1回分を加算して加算後の回数を返す。上限に達していれば null */
+export async function consumeOcrUsage(db: D1Database, userId: string, date: string, limit: number): Promise<number | null> {
+  const row = await db
+    .prepare(
+      `INSERT INTO ocr_usage (user_id, date, count) VALUES (?1, ?2, 1)
+       ON CONFLICT (user_id, date) DO UPDATE SET count = count + 1 WHERE count < ?3
+       RETURNING count`,
+    )
+    .bind(userId, date, limit)
+    .first<{ count: number }>();
+  return row?.count ?? null;
+}
+
+/** 読み取りに失敗したときは回数を戻す */
+export async function refundOcrUsage(db: D1Database, userId: string, date: string): Promise<void> {
+  await db.prepare("UPDATE ocr_usage SET count = count - 1 WHERE user_id = ? AND date = ? AND count > 0").bind(userId, date).run();
+}
+
 /** ログインのたびにメールアドレス・表示名・最終利用日時を更新する */
 export async function touchUser(
   db: D1Database,

@@ -93,14 +93,27 @@ export function parseFields(text: string): ReceiptFields | null {
   } catch {
     return null;
   }
+  const payee = typeof obj.payee === "string" && obj.payee.trim() ? obj.payee.trim() : null;
+  const listed = Array.isArray(obj.payee_candidates)
+    ? obj.payee_candidates.filter((p): p is string => typeof p === "string").map((p) => p.trim())
+    : [];
+  const payeeCandidates = [...new Set([payee, ...listed].filter((p): p is string => !!p))].slice(0, MAX_PAYEE_CANDIDATES);
+  const uncertain = Array.isArray(obj.uncertain)
+    ? UNCERTAIN_FIELDS.filter((f) => (obj.uncertain as unknown[]).includes(f))
+    : [];
   return {
     date: normalizeDate(obj.date),
-    payee: typeof obj.payee === "string" && obj.payee.trim() ? obj.payee.trim() : null,
+    payee: payee ?? payeeCandidates[0] ?? null,
+    payeeCandidates,
     amount: normalizeAmount(obj.amount),
     category: typeof obj.category === "string" ? obj.category : null,
     confidence: typeof obj.confidence === "string" ? obj.confidence : null,
+    uncertain,
   };
 }
+
+const MAX_PAYEE_CANDIDATES = 3;
+const UNCERTAIN_FIELDS = ["date", "payee", "amount"] as const;
 
 function normalizeDate(v: unknown): string | null {
   if (typeof v !== "string") return null;

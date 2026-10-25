@@ -13,6 +13,9 @@ export const MEMO_MAX_LENGTH = 200;
 export const PDF_MAX_BYTES = 10 * 1024 * 1024;
 
 export type RecordSource = "manual" | "ocr";
+/** final: 確定（集計・出力の対象）、draft: 一時保存（入力途中） */
+export type RecordStatus = "final" | "draft";
+const DRAFT_LABEL = "一時保存";
 
 export interface MedicalRecord {
   id: string;
@@ -30,6 +33,7 @@ export interface MedicalRecord {
   source: RecordSource;
   createdAt: string;
   updatedAt: string;
+  status: RecordStatus;
 }
 
 /** 入力画面の値（金額は文字列のまま受け取る） */
@@ -59,7 +63,12 @@ export function medicalRow(r: MedicalRecord): CellValue[] {
     r.createdAt,
     r.updatedAt,
     false,
+    r.status === "draft" ? DRAFT_LABEL : "",
   ];
+}
+
+export function isFinal(r: MedicalRecord): boolean {
+  return r.status === "final";
 }
 
 /** 医療費シートの値（見出し行を含む）を読み取る。削除済みは除き、新しい順に並べる */
@@ -97,6 +106,7 @@ export function parseMedical(values: unknown[][]): { records: MedicalRecord[]; p
       source: str(r[10]) === "ocr" ? "ocr" : "manual",
       createdAt: str(r[11]),
       updatedAt: str(r[12]),
+      status: str(r[14]) === DRAFT_LABEL ? "draft" : "final",
     });
   });
   return { records: sortRecords(records), problems };
@@ -151,14 +161,29 @@ export function validateRecord(v: RecordInput, year: number): RecordErrors {
   return errors;
 }
 
+/** 一時保存では未入力の項目を許し、入力済みの項目だけ確認する */
+export function validateDraft(v: RecordInput, year: number): RecordErrors {
+  const errors = validateRecord(v, year);
+  const filled: Record<keyof RecordInput, boolean> = {
+    date: !!v.date,
+    personId: !!v.personId,
+    payee: !!v.payee.trim(),
+    category: true,
+    amount: !!v.amount.trim(),
+    reimbursed: !!v.reimbursed.trim(),
+    memo: true,
+  };
+  return Object.fromEntries(Object.entries(errors).filter(([k]) => filled[k as keyof RecordInput])) as RecordErrors;
+}
+
 /** 入力済みの支払先（新しい記録のものから順に、重複なし） */
 export function payeeSuggestions(records: MedicalRecord[]): string[] {
-  return [...new Set(sortRecords(records).map((r) => r.payee))];
+  return [...new Set(sortRecords(records.filter(isFinal)).map((r) => r.payee))];
 }
 
 /** 同じ支払先の直近の記録の区分 */
 export function lastCategoryFor(records: MedicalRecord[], payee: string): string | null {
-  return sortRecords(records).find((r) => r.payee === payee.trim())?.category ?? null;
+  return sortRecords(records.filter(isFinal)).find((r) => r.payee === payee.trim())?.category ?? null;
 }
 
 /** 通院の交通費の入力（診療の記録と一緒に入力し、台帳には別の記録として保存する） */
@@ -205,7 +230,17 @@ export function transportFromRecord(r: MedicalRecord): TransportInput | null {
 
 /** 診療の記録と一緒に入力された交通費の記録（同じ日・同じ人の交通費） */
 export function findLinkedTransport(records: MedicalRecord[], r: MedicalRecord): MedicalRecord | null {
-  return records.find((x) => x.id !== r.id && isTransportRecord(x) && x.date === r.date && x.personId === r.personId) ?? null;
+  return (
+    records.find(
+      (x) => x.id !== r.id && isFinal(x) && isTransportRecord(x) && x.date === r.date && x.personId === r.personId,
+    ) ?? null
+  );
+}
+
+/** その支払先の直近の確定した記録（前回の内容の呼び出しに使う） */
+export function lastVisitTo(records: MedicalRecord[], payee: string): MedicalRecord | null {
+  const p = payee.trim();
+  return sortRecords(records.filter((r) => isFinal(r) && !isTransportRecord(r))).find((r) => r.payee === p) ?? null;
 }
 
 export type TransportErrors = Partial<Record<keyof TransportInput, string>>;

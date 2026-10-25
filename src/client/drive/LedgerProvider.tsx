@@ -33,6 +33,7 @@ import {
   transportMemo,
   type MedicalRecord,
   type RecordInput,
+  type RecordSource,
   type TransportInput,
 } from "./records";
 
@@ -70,8 +71,12 @@ export interface SaveRecordOptions {
   id?: string;
   newFiles: File[];
   removedFileIds: string[];
-  /** 一緒に記録する通院の交通費（台帳には別の記録として追加する） */
+  /** 一緒に記録する通院の交通費（台帳には別の記録として追加する）。一時保存では使わない */
   transport?: TransportInput;
+  /** 一時保存（入力途中）として保存する */
+  draft?: boolean;
+  /** 新規の記録の読取方法（写真から読み取ったら ocr） */
+  source?: RecordSource;
 }
 
 interface LedgerContextValue {
@@ -262,27 +267,29 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
           amount: parseAmount(input.amount) ?? 0,
           reimbursed: input.reimbursed.trim() ? (parseAmount(input.reimbursed) ?? 0) : 0,
           memo: input.memo.trim(),
-          source: existing?.source ?? ("manual" as const),
+          source: existing?.source ?? opts.source ?? "manual",
           createdAt: existing?.createdAt ?? now,
           updatedAt: now,
+          status: opts.draft ? ("draft" as const) : ("final" as const),
         };
         const kept = (existing?.receiptFileIds ?? []).filter((id) => !opts.removedFileIds.includes(id));
         const contents = await Promise.all(opts.newFiles.map(prepareReceipt));
         const uploaded = await uploadReceipts(client, cache, s.ledger, base, contents, kept.length);
         const record: MedicalRecord = { ...base, receiptFileIds: [...kept, ...uploaded] };
-        const transport: MedicalRecord | null = opts.transport
-          ? {
-              ...base,
-              id: crypto.randomUUID(),
-              payee: opts.transport.carrier.trim(),
-              category: TRANSPORT_CATEGORY,
-              amount: transportAmount(opts.transport) ?? 0,
-              reimbursed: 0,
-              memo: transportMemo(opts.transport),
-              receiptFileIds: [],
-              source: "manual",
-            }
-          : null;
+        const transport: MedicalRecord | null =
+          opts.transport && !opts.draft
+            ? {
+                ...base,
+                id: crypto.randomUUID(),
+                payee: opts.transport.carrier.trim(),
+                category: TRANSPORT_CATEGORY,
+                amount: transportAmount(opts.transport) ?? 0,
+                reimbursed: 0,
+                memo: transportMemo(opts.transport),
+                receiptFileIds: [],
+                source: "manual",
+              }
+            : null;
         try {
           if (existing) await updateRecord(client, s.ledger.spreadsheetId, record);
           // 新規は診療と交通費を1回で書き込み、片方だけ残らないようにする

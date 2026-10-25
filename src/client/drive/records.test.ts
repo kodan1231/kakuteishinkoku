@@ -4,6 +4,8 @@ import {
   findLinkedTransport,
   isTransportRecord,
   lastCategoryFor,
+  lastVisitTo,
+  validateDraft,
   medicalRow,
   normalizeDate,
   parseAmount,
@@ -34,6 +36,7 @@ const record = (over: Partial<MedicalRecord>): MedicalRecord => ({
   source: "manual",
   createdAt: "2026-01-15T00:00:00.000Z",
   updatedAt: "2026-01-15T00:00:00.000Z",
+  status: "final",
   ...over,
 });
 
@@ -62,6 +65,37 @@ describe("parseMedical", () => {
   it("id の重複を検知する", () => {
     const row = medicalRow(record({ id: "a" }));
     expect(parseMedical([MEDICAL_HEADERS, row, row]).problems).toHaveLength(1);
+  });
+
+  it("一時保存の状態を読み戻せる。状態列が無い古い行は確定扱い", () => {
+    const draft = record({ id: "d", status: "draft" });
+    const old = medicalRow(record({ id: "o" })).slice(0, 14);
+    const { records } = parseMedical([MEDICAL_HEADERS, medicalRow(draft), old]);
+    expect(records.find((r) => r.id === "d")?.status).toBe("draft");
+    expect(records.find((r) => r.id === "o")?.status).toBe("final");
+  });
+});
+
+describe("validateDraft", () => {
+  it("未入力の項目は許し、入力済みの項目は確認する", () => {
+    const empty = input({ date: "", payee: "", amount: "" });
+    expect(validateDraft(empty, 2026)).toEqual({});
+    expect(validateDraft({ ...empty, amount: "abc", payee: "あ".repeat(21) }, 2026)).toEqual({
+      amount: expect.any(String),
+      payee: expect.any(String),
+    });
+  });
+});
+
+describe("一時保存の記録は候補・呼び出しに使わない", () => {
+  it("確定した記録だけを使う", () => {
+    const records = [
+      record({ id: "1", date: "2026-01-10", payee: "△△薬局", status: "draft" }),
+      record({ id: "2", date: "2026-01-05", payee: "財務総合病院" }),
+    ];
+    expect(payeeSuggestions(records)).toEqual(["財務総合病院"]);
+    expect(lastVisitTo(records, "△△薬局")).toBeNull();
+    expect(lastVisitTo(records, "財務総合病院")?.id).toBe("2");
   });
 });
 

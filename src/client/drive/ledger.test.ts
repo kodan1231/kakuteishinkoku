@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { buildLedgerRequests, FAMILY_HEADERS, parseFamily, pickFamilySourceYear, validateName } from "./ledger";
+import {
+  buildLedgerRequests,
+  FAMILY_HEADERS,
+  parseFamily,
+  pickFamilySourceYear,
+  readSchemaVersion,
+  validateName,
+} from "./ledger";
 
 describe("validateName", () => {
   it("空欄と11文字以上はエラー", () => {
@@ -60,6 +67,13 @@ describe("buildLedgerRequests", () => {
     expect(requests.filter((r) => r.addProtectedRange).every((r) => r.addProtectedRange.protectedRange.warningOnly)).toBe(
       true,
     );
+  });
+});
+
+describe("readSchemaVersion", () => {
+  it("_meta から版と行番号を読む", () => {
+    expect(readSchemaVersion([["key", "value"], ["schema_version", 1], ["app", "x"]])).toEqual({ version: 1, row: 2 });
+    expect(readSchemaVersion([["key", "value"]])).toBeNull();
   });
 });
 
