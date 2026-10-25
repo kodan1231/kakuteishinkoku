@@ -184,8 +184,9 @@ export async function reorderFamily(c: GoogleClient, spreadsheetId: string, orde
   );
 }
 
-export async function addRecord(c: GoogleClient, spreadsheetId: string, r: MedicalRecord): Promise<void> {
-  await c.appendValues(spreadsheetId, sheetRange(SHEET.medical, "A:N"), [medicalRow(r)]);
+/** 複数の記録（診療と交通費など）を1回の書き込みで追加する */
+export async function addRecords(c: GoogleClient, spreadsheetId: string, records: MedicalRecord[]): Promise<void> {
+  await c.appendValues(spreadsheetId, sheetRange(SHEET.medical, "A:N"), records.map(medicalRow));
 }
 
 export async function updateRecord(c: GoogleClient, spreadsheetId: string, r: MedicalRecord): Promise<void> {

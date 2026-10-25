@@ -1,16 +1,25 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { useLedger } from "../drive/LedgerProvider";
 
 const boxClass = "flex h-24 w-24 items-center justify-center overflow-hidden rounded border bg-gray-50 text-xs text-gray-500";
+const actionClass = "text-xs text-teal-700 underline disabled:opacity-40";
 
 export function driveFileUrl(fileId: string): string {
   return `https://drive.google.com/file/d/${fileId}/view`;
 }
 
-/** ドライブに保存済みの領収書。タップでドライブの表示画面を開く */
-export function ReceiptPreview({ fileId }: { fileId: string }) {
+interface LoadedReceipt {
+  blob: Blob;
+  url: string;
+  mimeType: string;
+  name: string;
+}
+
+/** ドライブに保存済みの領収書。タップでドライブの表示画面を開き、「保存」で端末に保存する */
+export function ReceiptPreview({ fileId, children }: { fileId: string; children?: ReactNode }) {
   const { loadReceipt } = useLedger();
-  const [preview, setPreview] = useState<{ url?: string; mimeType?: string; error?: boolean }>({});
+  const [receipt, setReceipt] = useState<LoadedReceipt | null>(null);
+  const [failed, setFailed] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -19,9 +28,9 @@ export function ReceiptPreview({ fileId }: { fileId: string }) {
       (r) => {
         if (cancelled) return;
         url = URL.createObjectURL(r.blob);
-        setPreview({ url, mimeType: r.mimeType });
+        setReceipt({ ...r, url });
       },
-      () => !cancelled && setPreview({ error: true }),
+      () => !cancelled && setFailed(true),
     );
     return () => {
       cancelled = true;
@@ -30,14 +39,40 @@ export function ReceiptPreview({ fileId }: { fileId: string }) {
   }, [fileId, loadReceipt]);
 
   return (
-    <a href={driveFileUrl(fileId)} target="_blank" rel="noreferrer" className={boxClass}>
-      {preview.error ? "表示できません" : !preview.url ? "読み込み中…" : preview.mimeType?.startsWith("image/") ? (
-        <img src={preview.url} alt="領収書" className="h-full w-full object-cover" />
-      ) : (
-        "PDF"
-      )}
-    </a>
+    <div className="space-y-1 text-center">
+      <a href={driveFileUrl(fileId)} target="_blank" rel="noreferrer" className={boxClass}>
+        {failed ? "表示できません" : !receipt ? "読み込み中…" : receipt.mimeType.startsWith("image/") ? (
+          <img src={receipt.url} alt="領収書" className="h-full w-full object-cover" />
+        ) : (
+          "PDF"
+        )}
+      </a>
+      <div className="flex justify-center gap-2">
+        <button type="button" className={actionClass} disabled={!receipt} onClick={() => receipt && void saveToDevice(receipt)}>
+          保存
+        </button>
+        {children}
+      </div>
+    </div>
   );
+}
+
+/** スマホは共有メニュー（「画像を保存」で写真アプリへ）、PC はダウンロード */
+async function saveToDevice(r: LoadedReceipt): Promise<void> {
+  const file = new File([r.blob], r.name, { type: r.mimeType });
+  if (matchMedia("(pointer: coarse)").matches && navigator.canShare?.({ files: [file] })) {
+    try {
+      await navigator.share({ files: [file] });
+      return;
+    } catch (e) {
+      if (e instanceof DOMException && e.name === "AbortError") return;
+      // 共有できなければダウンロードにする
+    }
+  }
+  const a = document.createElement("a");
+  a.href = r.url;
+  a.download = r.name;
+  a.click();
 }
 
 /** 保存前に選んだファイル */

@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { MEDICAL_HEADERS } from "./ledger";
 import {
+  findLinkedTransport,
+  isTransportRecord,
   lastCategoryFor,
   medicalRow,
   normalizeDate,
@@ -8,9 +10,14 @@ import {
   parseMedical,
   payeeSuggestions,
   receiptFileName,
+  transportAmount,
+  transportFromRecord,
+  transportMemo,
   validateRecord,
+  validateTransport,
   type MedicalRecord,
   type RecordInput,
+  type TransportInput,
 } from "./records";
 
 const record = (over: Partial<MedicalRecord>): MedicalRecord => ({
@@ -114,6 +121,52 @@ describe("支払先の候補", () => {
   it("同じ支払先の直近の区分を返す", () => {
     expect(lastCategoryFor(records, " 霞が関薬局 ")).toBe("その他の医療費");
     expect(lastCategoryFor(records, "未登録")).toBeNull();
+  });
+});
+
+describe("交通費", () => {
+  const transport = (over: Partial<TransportInput> = {}): TransportInput => ({
+    carrier: "JR",
+    from: "自宅",
+    to: "順天堂医院",
+    fare: "220",
+    roundTrip: true,
+    ...over,
+  });
+
+  it("往復なら運賃の2倍、メモに区間を入れる", () => {
+    expect(transportAmount(transport())).toBe(440);
+    expect(transportAmount(transport({ roundTrip: false }))).toBe(220);
+    expect(transportMemo(transport())).toBe("通院: 自宅→順天堂医院（往復）");
+  });
+
+  it("保存した記録から入力欄の値を復元できる", () => {
+    const r = record({ payee: "JR", category: "その他の医療費", amount: 440, memo: transportMemo(transport()) });
+    expect(isTransportRecord(r)).toBe(true);
+    expect(transportFromRecord(r)).toEqual(transport());
+  });
+
+  it("交通費でない記録は対象外", () => {
+    expect(isTransportRecord(record({ category: "その他の医療費", memo: "眼鏡" }))).toBe(false);
+    expect(transportFromRecord(record({}))).toBeNull();
+  });
+
+  it("同じ日・同じ人の交通費を診療の記録にひも付ける", () => {
+    const visit = record({ id: "v", date: "2026-01-15", personId: "p1" });
+    const memo = transportMemo(transport());
+    const t1 = record({ id: "t1", date: "2026-01-15", personId: "p1", category: "その他の医療費", memo });
+    const t2 = record({ id: "t2", date: "2026-01-15", personId: "p2", category: "その他の医療費", memo });
+    expect(findLinkedTransport([visit, t2, t1], visit)?.id).toBe("t1");
+    expect(findLinkedTransport([visit, t2], visit)).toBeNull();
+  });
+
+  it("入力チェック", () => {
+    expect(validateTransport(transport())).toEqual({});
+    expect(validateTransport(transport({ carrier: "", to: "", fare: "0" }))).toEqual({
+      carrier: expect.any(String),
+      to: expect.any(String),
+      fare: expect.any(String),
+    });
   });
 });
 

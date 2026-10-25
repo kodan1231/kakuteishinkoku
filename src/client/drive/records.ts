@@ -161,7 +161,74 @@ export function lastCategoryFor(records: MedicalRecord[], payee: string): string
   return sortRecords(records).find((r) => r.payee === payee.trim())?.category ?? null;
 }
 
-const EXTENSIONS: Record<string, string> = { "image/jpeg": "jpg", "image/png": "png", "application/pdf": "pdf" };
+/** 通院の交通費の入力（診療の記録と一緒に入力し、台帳には別の記録として保存する） */
+export interface TransportInput {
+  /** 交通機関（台帳の支払先になる） */
+  carrier: string;
+  from: string;
+  to: string;
+  /** 片道の運賃 */
+  fare: string;
+  roundTrip: boolean;
+}
+
+/** 交通費は明細書の区分では「その他の医療費（交通費等）」 */
+export const TRANSPORT_CATEGORY = "その他の医療費";
+const TRANSPORT_MEMO_PREFIX = "通院: ";
+
+export function emptyTransport(): TransportInput {
+  return { carrier: "", from: "自宅", to: "", fare: "", roundTrip: true };
+}
+
+/** 交通費の記録のメモ。前回の内容を呼び出すときの目印も兼ねる */
+export function transportMemo(t: Pick<TransportInput, "from" | "to" | "roundTrip">): string {
+  return `${TRANSPORT_MEMO_PREFIX}${t.from.trim()}→${t.to.trim()}${t.roundTrip ? "（往復）" : ""}`;
+}
+
+export function transportAmount(t: Pick<TransportInput, "fare" | "roundTrip">): number | null {
+  const fare = parseAmount(t.fare);
+  return fare === null ? null : fare * (t.roundTrip ? 2 : 1);
+}
+
+export function isTransportRecord(r: MedicalRecord): boolean {
+  return r.category === TRANSPORT_CATEGORY && r.memo.startsWith(TRANSPORT_MEMO_PREFIX);
+}
+
+/** 交通費の記録から入力欄の値を復元する */
+export function transportFromRecord(r: MedicalRecord): TransportInput | null {
+  const m = r.memo.slice(TRANSPORT_MEMO_PREFIX.length).match(/^(.*)→(.*?)(（往復）)?$/);
+  if (!isTransportRecord(r) || !m) return null;
+  const roundTrip = !!m[3];
+  const fare = roundTrip && r.amount % 2 === 0 ? r.amount / 2 : r.amount;
+  return { carrier: r.payee, from: m[1], to: m[2], fare: String(fare), roundTrip: roundTrip && r.amount % 2 === 0 };
+}
+
+/** 診療の記録と一緒に入力された交通費の記録（同じ日・同じ人の交通費） */
+export function findLinkedTransport(records: MedicalRecord[], r: MedicalRecord): MedicalRecord | null {
+  return records.find((x) => x.id !== r.id && isTransportRecord(x) && x.date === r.date && x.personId === r.personId) ?? null;
+}
+
+export type TransportErrors = Partial<Record<keyof TransportInput, string>>;
+
+export function validateTransport(t: TransportInput): TransportErrors {
+  const errors: TransportErrors = {};
+  const carrier = t.carrier.trim();
+  if (!carrier) errors.carrier = "交通機関を入力してください";
+  else if ([...carrier].length > PAYEE_MAX_LENGTH) errors.carrier = `交通機関は${PAYEE_MAX_LENGTH}文字以内で入力してください`;
+  if (!t.from.trim()) errors.from = "出発地を入力してください";
+  if (!t.to.trim()) errors.to = "到着地を入力してください";
+  const amount = transportAmount(t);
+  if (amount === null || amount < 1 || amount > AMOUNT_MAX) errors.fare = "運賃を1円以上の整数で入力してください";
+  if ([...transportMemo(t)].length > MEMO_MAX_LENGTH) errors.to = "区間が長すぎます";
+  return errors;
+}
+
+/** 前回の記録を呼び出すときに入れる値（支払額は毎回違うので空欄） */
+export function inputFromPrevious(r: MedicalRecord, date: string): RecordInput {
+  return { date, personId: r.personId, payee: r.payee, category: r.category, amount: "", reimbursed: "", memo: "" };
+}
+
+const EXTENSIONS: Record<string, string> ={ "image/jpeg": "jpg", "image/png": "png", "application/pdf": "pdf" };
 
 /** 領収書のファイル名: 20260115_〇〇病院_12340_<記録idの先頭8文字>[-2].jpg */
 export function receiptFileName(

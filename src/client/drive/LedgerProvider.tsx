@@ -8,7 +8,7 @@ import type { FamilyMember } from "./ledger";
 import { LedgerCache } from "./ledgerCache";
 import {
   addFamilyMember,
-  addRecord,
+  addRecords,
   createLedger,
   createRoot,
   deleteFamilyMember,
@@ -25,7 +25,16 @@ import {
   type Ledger,
   type ReceiptContent,
 } from "./ledgerService";
-import { parseAmount, PDF_MAX_BYTES, type MedicalRecord, type RecordInput } from "./records";
+import {
+  parseAmount,
+  PDF_MAX_BYTES,
+  TRANSPORT_CATEGORY,
+  transportAmount,
+  transportMemo,
+  type MedicalRecord,
+  type RecordInput,
+  type TransportInput,
+} from "./records";
 
 /**
  * 選択中の年度の台帳と家族の状態。
@@ -61,6 +70,8 @@ export interface SaveRecordOptions {
   id?: string;
   newFiles: File[];
   removedFileIds: string[];
+  /** 一緒に記録する通院の交通費（台帳には別の記録として追加する） */
+  transport?: TransportInput;
 }
 
 interface LedgerContextValue {
@@ -75,8 +86,8 @@ interface LedgerContextValue {
   moveMember: (id: string, delta: -1 | 1) => Promise<void>;
   saveRecord: (input: RecordInput, opts: SaveRecordOptions) => Promise<void>;
   deleteRecord: (id: string) => Promise<void>;
-  /** 領収書ファイルの中身と種類（表示用） */
-  loadReceipt: (fileId: string) => Promise<{ blob: Blob; mimeType: string }>;
+  /** 領収書ファイルの中身・種類・ファイル名（表示・保存用） */
+  loadReceipt: (fileId: string) => Promise<{ blob: Blob; mimeType: string; name: string }>;
 }
 
 const RECEIPT_MAX_EDGE = 1600;
@@ -259,12 +270,33 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
         const contents = await Promise.all(opts.newFiles.map(prepareReceipt));
         const uploaded = await uploadReceipts(client, cache, s.ledger, base, contents, kept.length);
         const record: MedicalRecord = { ...base, receiptFileIds: [...kept, ...uploaded] };
+        const transport: MedicalRecord | null = opts.transport
+          ? {
+              ...base,
+              id: crypto.randomUUID(),
+              payee: opts.transport.carrier.trim(),
+              category: TRANSPORT_CATEGORY,
+              amount: transportAmount(opts.transport) ?? 0,
+              reimbursed: 0,
+              memo: transportMemo(opts.transport),
+              receiptFileIds: [],
+              source: "manual",
+            }
+          : null;
         try {
           if (existing) await updateRecord(client, s.ledger.spreadsheetId, record);
-          else await addRecord(client, s.ledger.spreadsheetId, record);
+          // 新規は診療と交通費を1回で書き込み、片方だけ残らないようにする
+          else await addRecords(client, s.ledger.spreadsheetId, transport ? [record, transport] : [record]);
         } catch (e) {
           await trashFiles(client, uploaded);
           throw e;
+        }
+        if (existing && transport) {
+          try {
+            await addRecords(client, s.ledger.spreadsheetId, [transport]);
+          } catch (e) {
+            throw new Error(`記録は保存しましたが、交通費を保存できませんでした。${e instanceof Error ? e.message : String(e)}`);
+          }
         }
         if (existing) {
           await trashFiles(client, opts.removedFileIds);
@@ -290,7 +322,7 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
   const loadReceipt = useCallback(
     async (fileId: string) => {
       const [meta, blob] = await Promise.all([client.getFileMeta(fileId), client.downloadFile(fileId)]);
-      return { blob, mimeType: meta.mimeType };
+      return { blob, mimeType: meta.mimeType, name: meta.name };
     },
     [client],
   );
