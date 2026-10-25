@@ -427,6 +427,8 @@ function applyOcr(
   if (fields.date?.startsWith(`${year}-`)) {
     input.date = fields.date;
   } else if (fields.date) {
+    // 初期値の「今日」のまま保存されないよう空欄にする
+    input.date = "";
     const [y, m, d] = fields.date.split("-").map(Number);
     warnings.push(`読み取った日付は${y}年${m}月${d}日です。${y}年分の記録なら、設定で年度を切り替えてから記録してください。`);
   }

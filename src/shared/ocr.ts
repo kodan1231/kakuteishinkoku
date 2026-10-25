@@ -66,10 +66,10 @@ export const OCR_CANDIDATE_MODELS = [
 
 export const OCR_PROMPT = `この画像は日本の領収書またはレシートです。次の項目を読み取り、JSON オブジェクトだけを出力してください。説明文やコードブロックは不要です。
 
-{"date": "支払日（YYYY-MM-DD）", "payee": "発行元の名称", "payee_candidates": ["発行元の候補（確からしい順、最大3つ）"], "amount": 支払った合計金額（円、整数）, "category": "区分", "confidence": "high|medium|low", "uncertain": ["自信がない項目（date / payee / amount）"]}
+{"date_text": "支払日（領収書の表記どおり）", "payee": "発行元の名称", "payee_candidates": ["発行元の候補（確からしい順、最大3つ）"], "amount": 支払った合計金額（円、整数）, "category": "区分", "confidence": "high|medium|low", "uncertain": ["自信がない項目（date / payee / amount）"]}
 
 ルール:
-- 和暦（令和など）は西暦に変換する
+- date_text は和暦・西暦を変換せず、領収書に書かれたとおりに書く（例: "令和8年2月3日"、"R8.2.3"、"2026/02/03"）。発行日・診療日・領収日があれば領収日（なければ発行日）を使う
 - payee はこの領収書を発行した病院・クリニック・薬局・店舗の名称。押印・住所・電話番号の近くに書かれていることが多い
   - 調剤薬局の領収書にある「保険医療機関」「処方元」などの病院名は発行元ではないので payee にしない（候補の2番目以降に入れてよい）
   - 患者名・宛名・会社名は payee にも候補にも入れない

@@ -1,5 +1,26 @@
 import { describe, expect, it } from "vitest";
-import { parseFields } from "./ocr";
+import { parseDateText, parseFields } from "./ocr";
+
+describe("parseDateText", () => {
+  it("和暦を西暦にする", () => {
+    expect(parseDateText("令和8年2月3日")).toBe("2026-02-03");
+    expect(parseDateText("R8.2.3")).toBe("2026-02-03");
+    expect(parseDateText("令和 ８年 ２月 ３日")).toBe("2026-02-03");
+    expect(parseDateText("令和元年5月1日")).toBe("2019-05-01");
+    expect(parseDateText("平成31年4月30日")).toBe("2019-04-30");
+  });
+
+  it("西暦はそのまま", () => {
+    expect(parseDateText("2026/02/03")).toBe("2026-02-03");
+    expect(parseDateText("2026年2月3日")).toBe("2026-02-03");
+  });
+
+  it("読めなければ null", () => {
+    expect(parseDateText("2月3日")).toBeNull();
+    expect(parseDateText(null)).toBeNull();
+    expect(parseDateText("令和8年13月1日")).toBeNull();
+  });
+});
 
 describe("parseFields", () => {
   it("JSON だけの応答を読み取る", () => {
@@ -27,6 +48,20 @@ describe("parseFields", () => {
       payeeCandidates: ["日本調剤 新浦安薬局", "順天堂大学医学部附属浦安病院", "A"],
       uncertain: ["payee"],
     });
+  });
+
+  it("和暦の date_text はプログラムで西暦に換算する（AI の date より優先）", () => {
+    const now = new Date(2026, 9, 25);
+    expect(parseFields('{"date_text":"令和8年2月3日","date":"2022-02-03"}', now)).toMatchObject({
+      date: "2026-02-03",
+      uncertain: [],
+    });
+  });
+
+  it("あり得ない年の日付は自信のない項目にする", () => {
+    const now = new Date(2026, 9, 25);
+    expect(parseFields('{"date":"2019-02-03"}', now)?.uncertain).toEqual(["date"]);
+    expect(parseFields('{"date":"2027-02-03"}', now)?.uncertain).toEqual(["date"]);
   });
 
   it("payee が無ければ候補の先頭を使う", () => {

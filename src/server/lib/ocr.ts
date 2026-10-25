@@ -82,8 +82,45 @@ function stringify(v: unknown): string {
   return typeof v === "string" ? v : JSON.stringify(v);
 }
 
+/** 和暦の元号と、その元年の前年（元号の年 + この値 = 西暦） */
+const ERAS: { pattern: RegExp; offset: number }[] = [
+  { pattern: /^(令和|令|R)/i, offset: 2018 },
+  { pattern: /^(平成|平|H)/i, offset: 1988 },
+  { pattern: /^(昭和|昭|S)/i, offset: 1925 },
+];
+
+/**
+ * 領収書の表記どおりの日付（和暦・西暦）を YYYY-MM-DD にする。
+ * 和暦の換算は AI に任せると誤ることがあるため、ここで行う。
+ */
+export function parseDateText(v: unknown): string | null {
+  if (typeof v !== "string") return null;
+  const s = v
+    .replace(/[０-９]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xfee0))
+    .replace(/\s/g, "")
+    .replace(/元年/, "1年");
+  for (const era of ERAS) {
+    const m = s.match(era.pattern);
+    if (!m) continue;
+    const d = s.slice(m[0].length).match(/^(\d{1,2})\D+(\d{1,2})\D+(\d{1,2})/);
+    return d ? toIsoDate(Number(d[1]) + era.offset, d[2], d[3]) : null;
+  }
+  const d = s.match(/(\d{4})\D+(\d{1,2})\D+(\d{1,2})/);
+  return d ? toIsoDate(Number(d[1]), d[2], d[3]) : null;
+}
+
+function toIsoDate(year: number, month: string, day: string): string | null {
+  const m = Number(month);
+  const d = Number(day);
+  if (m < 1 || m > 12 || d < 1 || d > 31) return null;
+  return `${year}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+}
+
+/** 読み取った年が今年より先、または還付申告の期限（5年）より前なら、日付に自信がないものとする */
+const PLAUSIBLE_PAST_YEARS = 6;
+
 /** 応答テキストから最初の JSON オブジェクトを取り出して正規化する */
-export function parseFields(text: string): ReceiptFields | null {
+export function parseFields(text: string, now = new Date()): ReceiptFields | null {
   const start = text.indexOf("{");
   const end = text.lastIndexOf("}");
   if (start < 0 || end <= start) return null;
@@ -98,11 +135,14 @@ export function parseFields(text: string): ReceiptFields | null {
     ? obj.payee_candidates.filter((p): p is string => typeof p === "string").map((p) => p.trim())
     : [];
   const payeeCandidates = [...new Set([payee, ...listed].filter((p): p is string => !!p))].slice(0, MAX_PAYEE_CANDIDATES);
-  const uncertain = Array.isArray(obj.uncertain)
-    ? UNCERTAIN_FIELDS.filter((f) => (obj.uncertain as unknown[]).includes(f))
-    : [];
+  const date = parseDateText(obj.date_text) ?? normalizeDate(obj.date);
+  const year = date ? Number(date.slice(0, 4)) : null;
+  const implausible = year !== null && (year > now.getFullYear() || year < now.getFullYear() - PLAUSIBLE_PAST_YEARS);
+  const uncertain = UNCERTAIN_FIELDS.filter(
+    (f) => (Array.isArray(obj.uncertain) && obj.uncertain.includes(f)) || (f === "date" && implausible),
+  );
   return {
-    date: normalizeDate(obj.date),
+    date,
     payee: payee ?? payeeCandidates[0] ?? null,
     payeeCandidates,
     amount: normalizeAmount(obj.amount),
