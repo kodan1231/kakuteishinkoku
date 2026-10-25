@@ -6,16 +6,17 @@ import { NoticeText, Page, WarningText } from "../components/Layout";
 import { StartRecord } from "../components/StartRecord";
 import { useReadyLedger } from "../drive/LedgerProvider";
 import { isFinal } from "../drive/records";
+import { totalReimbursed } from "../drive/reimbursements";
 import { formatYen } from "../lib/format";
 import { useOcr } from "../lib/ocr";
 
 export function Home() {
   const { user } = useAuth();
-  const { year, records, warnings, problems, notice } = useReadyLedger();
+  const { year, records, warnings, problems, notice, allocation } = useReadyLedger();
   const finals = records.filter(isFinal);
   const drafts = records.length - finals.length;
   const total = finals.reduce((sum, r) => sum + r.amount, 0);
-  const reimbursed = finals.reduce((sum, r) => sum + r.reimbursed, 0);
+  const reimbursed = finals.reduce((sum, r) => sum + totalReimbursed(r, allocation), 0);
   const usage = useOcrUsage();
   return (
     <Page title="確定申告サポート">
@@ -26,10 +27,11 @@ export function Home() {
       ))}
 
       <section className="space-y-1 rounded border p-3">
-        <div className="text-sm text-gray-600">{year}年分の医療費</div>
-        <div className="text-2xl font-bold">{formatYen(total)}</div>
+        <div className="text-sm text-gray-600">{year}年分の医療費（{finals.length}件）</div>
+        <div className="text-2xl font-bold">{formatYen(total - reimbursed)}</div>
         <div className="text-sm text-gray-600">
-          {finals.length}件{reimbursed > 0 && `・うち補填 ${formatYen(reimbursed)}`}
+          支払額 {formatYen(total)}
+          {reimbursed > 0 && ` − 補填 ${formatYen(reimbursed)}`}
         </div>
       </section>
 
@@ -45,6 +47,9 @@ export function Home() {
       <nav className="flex flex-col gap-2">
         <Link to="/records" className="text-teal-700 underline">
           記録一覧
+        </Link>
+        <Link to="/reimbursements" className="text-teal-700 underline">
+          健保給付・補填（月ごと）
         </Link>
         <Link to="/settings/family" className="text-teal-700 underline">
           家族設定

@@ -3,6 +3,7 @@ import { Page } from "../components/Layout";
 import { StartRecord } from "../components/StartRecord";
 import { useReadyLedger } from "../drive/LedgerProvider";
 import { isFinal, type MedicalRecord } from "../drive/records";
+import { adjustedAmount, totalReimbursed } from "../drive/reimbursements";
 import { formatMonthDay, formatYen } from "../lib/format";
 
 export function Records() {
@@ -32,6 +33,7 @@ export function Records() {
 }
 
 function RecordList({ records, empty }: { records: MedicalRecord[]; empty?: string }) {
+  const { allocation } = useReadyLedger();
   return (
     <ul className="divide-y rounded border">
       {records.map((r) => (
@@ -46,7 +48,11 @@ function RecordList({ records, empty }: { records: MedicalRecord[]; empty?: stri
             </div>
             <div className="shrink-0 text-right">
               <div>{r.amount > 0 ? formatYen(r.amount) : "—"}</div>
-              {r.reimbursed > 0 && <div className="text-xs text-gray-500">補填 {formatYen(r.reimbursed)}</div>}
+              {totalReimbursed(r, allocation) > 0 && (
+                <div className="text-xs text-gray-500">
+                  補填 {formatYen(totalReimbursed(r, allocation))} → {formatYen(adjustedAmount(r, allocation))}
+                </div>
+              )}
             </div>
           </Link>
         </li>

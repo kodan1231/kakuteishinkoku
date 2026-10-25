@@ -90,8 +90,9 @@ function RecordForm({
   withPhoto: boolean;
 }) {
   const navigate = useNavigate();
-  const { year, family, records, saveRecord, deleteRecord } = useReadyLedger();
+  const { year, family, records, saveRecord, deleteRecord, allocation } = useReadyLedger();
   const { read } = useOcr();
+  const allocated = existing ? (allocation.byRecord.get(existing.id) ?? 0) : 0;
   const [photo] = useState(() => (withPhoto ? peekHandedOffPhoto() : null));
   const [form, setForm] = useState<FormState>(() => initialForm(existing, template, year, family, records));
   const [newFiles, setNewFiles] = useState<File[]>(() => (photo ? [photo] : []));
@@ -293,7 +294,7 @@ function RecordForm({
         />
       </Field>
 
-      <Field label="補填額（円・保険金などで補填される額）" error={shown.reimbursed}>
+      <Field label="補填額（円・この記録だけの補填。健保給付は「健保給付・補填」で月ごとに入力）" error={shown.reimbursed}>
         <input
           inputMode="numeric"
           value={v.reimbursed}
@@ -303,6 +304,17 @@ function RecordForm({
           disabled={locked}
         />
       </Field>
+
+      {existing && allocated > 0 && (
+        <p className="rounded bg-gray-50 p-2 text-sm">
+          保存済みの内容: 支払額 {formatYen(existing.amount)}
+          {existing.reimbursed > 0 && ` − 補填 ${formatYen(existing.reimbursed)}`} − 健保給付の配分 {formatYen(allocated)}（自動）= 調整後{" "}
+          {formatYen(existing.amount - existing.reimbursed - allocated)}
+          <Link to="/reimbursements" className="ml-1 text-teal-700 underline">
+            健保給付・補填
+          </Link>
+        </p>
+      )}
 
       <Field label="メモ" error={shown.memo}>
         <textarea value={v.memo} onChange={(e) => set({ memo: e.target.value })} rows={2} className={inputClass} disabled={locked} />

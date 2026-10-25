@@ -52,7 +52,7 @@ describe("parseFamily", () => {
 });
 
 describe("buildLedgerRequests", () => {
-  it("4枚のシートを作り、既定のシートを消して、見出しと家族を書き込む", () => {
+  it("5枚のシートを作り、既定のシートを消して、見出しと家族を書き込む", () => {
     const requests = buildLedgerRequests([0], {
       year: 2026,
       family: [{ id: "a", name: "国税　太郎", relationship: "本人", order: 1 }],
@@ -60,7 +60,7 @@ describe("buildLedgerRequests", () => {
       consentedAt: "2026-10-22T00:00:00.000Z",
     }) as Record<string, any>[];
     const titles = requests.filter((r) => r.addSheet).map((r) => r.addSheet.properties.title);
-    expect(titles).toEqual(["医療費", "家族", "設定", "_meta"]);
+    expect(titles).toEqual(["医療費", "補填", "家族", "設定", "_meta"]);
     expect(requests.find((r) => r.deleteSheet)?.deleteSheet.sheetId).toBe(0);
     const family = requests.find((r) => r.updateCells?.start.sheetId === 1002)?.updateCells;
     expect(family.rows[1].values[1]).toEqual({ userEnteredValue: { stringValue: "国税　太郎" } });

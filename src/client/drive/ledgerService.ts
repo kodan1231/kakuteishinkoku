@@ -8,15 +8,18 @@ import {
   parseFamily,
   pickFamilySourceYear,
   ROOT_FOLDER_NAME,
+  buildAddReimbursementSheetRequests,
   MEDICAL_HEADERS,
   MEDICAL_LAST_COLUMN,
   readSchemaVersion,
+  REIMBURSEMENT_LAST_COLUMN,
   SHEET,
   sheetRange,
   type FamilyMember,
   type FamilyRow,
 } from "./ledger";
 import { medicalRow, parseMedical, receiptFileName, type MedicalRecord } from "./records";
+import { parseReimbursements, reimbursementRow, type MonthlyReimbursement } from "./reimbursements";
 
 /**
  * ドライブ上のフォルダ・台帳の検索と作成、家族・医療費シートの読み書き、領収書ファイルの保存。
@@ -140,11 +143,15 @@ function stripRow({ row: _row, ...m }: FamilyRow): FamilyMember {
   return m;
 }
 
-/** 家族・医療費の記録と、台帳の構成の問題（見出しの変更・id の重複）を読み取る */
-export async function loadLedgerData(
-  c: GoogleClient,
-  spreadsheetId: string,
-): Promise<{ members: FamilyRow[]; records: MedicalRecord[]; problems: string[] }> {
+export interface LedgerData {
+  members: FamilyRow[];
+  records: MedicalRecord[];
+  reimbursements: MonthlyReimbursement[];
+  problems: string[];
+}
+
+/** 家族・医療費の記録・月ごとの補填と、台帳の構成の問題（見出しの変更・id の重複）を読み取る */
+export async function loadLedgerData(c: GoogleClient, spreadsheetId: string): Promise<LedgerData> {
   let family: unknown[][];
   let medical: unknown[][];
   let meta: unknown[][];
@@ -162,13 +169,29 @@ export async function loadLedgerData(
     throw e;
   }
   const schema = readSchemaVersion(meta);
-  if (schema?.version === 1) {
+  if (schema && schema.version < 2) {
     await migrateToV2(c, spreadsheetId, schema.row);
     medical[0] = MEDICAL_HEADERS;
   }
+  if (schema && schema.version < 3) await migrateToV3(c, spreadsheetId, schema.row);
+  // 補填シートは版3で追加したため、移行の後に読む
+  const [reimbursement] = await c.batchGetValues(spreadsheetId, [
+    sheetRange(SHEET.reimbursement, `A1:${REIMBURSEMENT_LAST_COLUMN}`),
+  ]).catch((e: unknown) => {
+    if (e instanceof GoogleApiError && e.status === 400) {
+      throw new Error(`台帳のシート（${SHEET.reimbursement}）が見つかりません。シート名を元に戻してください`);
+    }
+    throw e;
+  });
   const f = parseFamily(family);
   const m = parseMedical(medical);
-  return { members: f.members, records: m.records, problems: [...f.problems, ...m.problems] };
+  const r = parseReimbursements(reimbursement);
+  return {
+    members: f.members,
+    records: m.records,
+    reimbursements: r.entries,
+    problems: [...f.problems, ...m.problems, ...r.problems],
+  };
 }
 
 /** 版1 → 2: 医療費シートに「状態」列の見出しを追加する（既存の行は空欄＝確定のまま） */
@@ -177,6 +200,33 @@ async function migrateToV2(c: GoogleClient, spreadsheetId: string, versionRow: n
     { range: sheetRange(SHEET.medical, `${MEDICAL_LAST_COLUMN}1`), values: [[MEDICAL_HEADERS[MEDICAL_HEADERS.length - 1]]] },
     { range: sheetRange(SHEET.meta, `B${versionRow}`), values: [[2]] },
   ]);
+}
+
+/** 版2 → 3: 「補填」シートを追加する */
+async function migrateToV3(c: GoogleClient, spreadsheetId: string, versionRow: number): Promise<void> {
+  try {
+    await c.batchUpdate(spreadsheetId, buildAddReimbursementSheetRequests());
+  } catch (e) {
+    // 別の端末が先に移行していればシートは既にある
+    if (!(e instanceof GoogleApiError && e.status === 400)) throw e;
+  }
+  await c.updateValues(spreadsheetId, [{ range: sheetRange(SHEET.meta, `B${versionRow}`), values: [[3]] }]);
+}
+
+export async function saveReimbursement(c: GoogleClient, spreadsheetId: string, r: MonthlyReimbursement, isNew: boolean): Promise<void> {
+  if (isNew) {
+    await c.appendValues(spreadsheetId, sheetRange(SHEET.reimbursement, `A:${REIMBURSEMENT_LAST_COLUMN}`), [reimbursementRow(r)]);
+    return;
+  }
+  const row = (await rowFinder(c, spreadsheetId, SHEET.reimbursement))(r.id);
+  await c.updateValues(spreadsheetId, [
+    { range: sheetRange(SHEET.reimbursement, `A${row}:${REIMBURSEMENT_LAST_COLUMN}${row}`), values: [reimbursementRow(r)] },
+  ]);
+}
+
+export async function deleteReimbursement(c: GoogleClient, spreadsheetId: string, id: string): Promise<void> {
+  const row = (await rowFinder(c, spreadsheetId, SHEET.reimbursement))(id);
+  await c.updateValues(spreadsheetId, [{ range: sheetRange(SHEET.reimbursement, `I${row}`), values: [[true]] }]);
 }
 
 export async function addFamilyMember(c: GoogleClient, spreadsheetId: string, m: FamilyMember): Promise<void> {

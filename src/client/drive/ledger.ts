@@ -4,10 +4,19 @@ import type { CellValue } from "./google";
 
 export const APP_ID = "kakuteishinkoku";
 export const ROOT_FOLDER_NAME = "確定申告サポート";
-/** 2: 医療費シートに「状態」列（一時保存）を追加 */
-export const LEDGER_SCHEMA_VERSION = 2;
+/**
+ * 2: 医療費シートに「状態」列（一時保存）を追加
+ * 3: 「補填」シート（月ごとの健保給付など）を追加
+ */
+export const LEDGER_SCHEMA_VERSION = 3;
 
-export const SHEET = { medical: "医療費", family: "家族", settings: "設定", meta: "_meta" } as const;
+export const SHEET = {
+  medical: "医療費",
+  reimbursement: "補填",
+  family: "家族",
+  settings: "設定",
+  meta: "_meta",
+} as const;
 type SheetKey = keyof typeof SHEET;
 
 export const MEDICAL_HEADERS = [
@@ -29,6 +38,9 @@ export const MEDICAL_HEADERS = [
 ];
 /** 医療費シートの最終列（A1 形式） */
 export const MEDICAL_LAST_COLUMN = "O";
+/** 補填シート: 月ごとの補填額（医療費の記録には書き込まず、表示・出力のたびに配分を計算する） */
+export const REIMBURSEMENT_HEADERS = ["id", "対象月", "対象者ID", "金額", "種類", "メモ", "作成日時", "更新日時", "削除済"];
+export const REIMBURSEMENT_LAST_COLUMN = "I";
 export const FAMILY_HEADERS = ["id", "氏名", "続柄", "並び順", "削除済"];
 const KEY_VALUE_HEADERS = ["key", "value"];
 
@@ -70,7 +82,7 @@ export function familyRow(m: FamilyMember): CellValue[] {
 }
 
 // 新規スプレッドシートの既定のシート（通常 0）と重ならない ID にする
-const SHEET_IDS: Record<SheetKey, number> = { medical: 1001, family: 1002, settings: 1003, meta: 1004 };
+const SHEET_IDS: Record<SheetKey, number> = { medical: 1001, family: 1002, settings: 1003, meta: 1004, reimbursement: 1005 };
 
 export interface LedgerInit {
   year: number;
@@ -79,10 +91,17 @@ export interface LedgerInit {
   consentedAt: string;
 }
 
+interface SheetSpec {
+  key: SheetKey;
+  rows: CellValue[][];
+  hidden?: boolean;
+}
+
 /** 作成直後の空のスプレッドシートを台帳の形にする batchUpdate のリクエスト */
 export function buildLedgerRequests(defaultSheetIds: number[], init: LedgerInit): object[] {
-  const sheets: { key: SheetKey; rows: CellValue[][]; hidden?: boolean }[] = [
+  const sheets: SheetSpec[] = [
     { key: "medical", rows: [MEDICAL_HEADERS] },
+    { key: "reimbursement", rows: [REIMBURSEMENT_HEADERS] },
     { key: "family", rows: [FAMILY_HEADERS, ...init.family.map(familyRow)] },
     { key: "settings", rows: [KEY_VALUE_HEADERS, ["総所得金額等", ""]] },
     {
@@ -99,18 +118,35 @@ export function buildLedgerRequests(defaultSheetIds: number[], init: LedgerInit)
     },
   ];
   return [
-    ...sheets.map((s, index) => ({
-      addSheet: {
-        properties: {
-          sheetId: SHEET_IDS[s.key],
-          title: SHEET[s.key],
-          index,
-          hidden: s.hidden ?? false,
-          gridProperties: { frozenRowCount: 1 },
-        },
-      },
-    })),
+    ...sheets.map((s, index) => addSheetRequest(s, index)),
     ...defaultSheetIds.map((sheetId) => ({ deleteSheet: { sheetId } })),
+    ...fillSheetRequests(sheets),
+  ];
+}
+
+/** 版2 → 3: 「補填」シートを医療費シートの隣に追加する */
+export function buildAddReimbursementSheetRequests(): object[] {
+  const sheet: SheetSpec = { key: "reimbursement", rows: [REIMBURSEMENT_HEADERS] };
+  return [addSheetRequest(sheet, 1), ...fillSheetRequests([sheet])];
+}
+
+function addSheetRequest(s: SheetSpec, index: number): object {
+  return {
+    addSheet: {
+      properties: {
+        sheetId: SHEET_IDS[s.key],
+        title: SHEET[s.key],
+        index,
+        hidden: s.hidden ?? false,
+        gridProperties: { frozenRowCount: 1 },
+      },
+    },
+  };
+}
+
+/** 見出し・初期値の書き込みと保護 */
+function fillSheetRequests(sheets: SheetSpec[]): object[] {
+  return [
     ...sheets.map((s) => ({
       updateCells: {
         start: { sheetId: SHEET_IDS[s.key], rowIndex: 0, columnIndex: 0 },

@@ -13,11 +13,13 @@ import {
   createRoot,
   deleteFamilyMember,
   deleteRecord,
+  deleteReimbursement,
   findRoot,
   loadLedgerData,
   openLedger,
   renameReceipts,
   reorderFamily,
+  saveReimbursement,
   trashFiles,
   updateFamilyMember,
   updateRecord,
@@ -36,6 +38,7 @@ import {
   type RecordSource,
   type TransportInput,
 } from "./records";
+import { allocate, DEFAULT_REIMBURSEMENT_KIND, type Allocation, type MonthlyReimbursement } from "./reimbursements";
 
 /**
  * 選択中の年度の台帳と家族の状態。
@@ -50,6 +53,8 @@ export type LedgerState =
       ledger: Ledger;
       family: FamilyMember[];
       records: MedicalRecord[];
+      /** 月ごとの補填（健保給付など） */
+      reimbursements: MonthlyReimbursement[];
       /** 同じ年度の台帳が複数あるなど */
       warnings: string[];
       /** 見出しの変更・id の重複など、台帳の中身の問題 */
@@ -64,6 +69,15 @@ export interface MemberInput {
   id?: string;
   name: string;
   relationship: string;
+}
+
+export interface MonthlyReimbursementInput {
+  /** 既存の補填の id（新規なら省略） */
+  id?: string;
+  month: string;
+  personId: string;
+  amount: number;
+  memo: string;
 }
 
 export interface SaveRecordOptions {
@@ -93,6 +107,10 @@ interface LedgerContextValue {
   deleteRecord: (id: string) => Promise<void>;
   /** 領収書ファイルの中身・種類・ファイル名（表示・保存用） */
   loadReceipt: (fileId: string) => Promise<{ blob: Blob; mimeType: string; name: string }>;
+  /** 月の補填額を保存する（金額 0 なら削除） */
+  saveMonthlyReimbursement: (input: MonthlyReimbursementInput) => Promise<void>;
+  /** 月ごとの補填の記録への配分（台帳の準備ができるまでは空） */
+  allocation: Allocation;
 }
 
 const RECEIPT_MAX_EDGE = 1600;
@@ -158,7 +176,14 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
           const opened = await openLedger(client, cache, root, y);
           if (!opened) return { status: "needsSetup" };
           const data = await loadLedgerData(client, opened.ledger.spreadsheetId);
-          return { status: "ready", ...opened, family: data.members, records: data.records, problems: data.problems };
+          return {
+            status: "ready",
+            ...opened,
+            family: data.members,
+            records: data.records,
+            reimbursements: data.reimbursements,
+            problems: data.problems,
+          };
         })().finally(() => inflight.current.delete(y));
         inflight.current.set(y, p);
       }
@@ -209,7 +234,13 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
       const data = await loadLedgerData(client, s.ledger.spreadsheetId);
       setState((cur) =>
         cur.status === "ready" && cur.ledger.spreadsheetId === s.ledger.spreadsheetId
-          ? { ...cur, family: data.members, records: data.records, problems: data.problems }
+          ? {
+              ...cur,
+              family: data.members,
+              records: data.records,
+              reimbursements: data.reimbursements,
+              problems: data.problems,
+            }
           : cur,
       );
     },
@@ -334,6 +365,36 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
     [client],
   );
 
+  const saveMonthlyReimbursement = useCallback(
+    (input: MonthlyReimbursementInput) =>
+      withReady(async (s) => {
+        const id = s.ledger.spreadsheetId;
+        const existing = input.id ? s.reimbursements.find((r) => r.id === input.id) : undefined;
+        if (input.amount <= 0) {
+          if (existing) await deleteReimbursement(client, id, existing.id);
+          return;
+        }
+        const now = new Date().toISOString();
+        const entry: MonthlyReimbursement = {
+          id: existing?.id ?? crypto.randomUUID(),
+          month: input.month,
+          personId: input.personId,
+          amount: input.amount,
+          kind: existing?.kind ?? DEFAULT_REIMBURSEMENT_KIND,
+          memo: input.memo.trim(),
+          createdAt: existing?.createdAt ?? now,
+          updatedAt: now,
+        };
+        await saveReimbursement(client, id, entry, !existing);
+      }),
+    [client, withReady],
+  );
+
+  const allocation = useMemo(
+    () => (state.status === "ready" ? allocate(state.records, state.reimbursements) : allocate([], [])),
+    [state],
+  );
+
   const value = useMemo<LedgerContextValue>(
     () => ({
       state,
@@ -347,8 +408,24 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
       saveRecord,
       deleteRecord: deleteRecordById,
       loadReceipt,
+      saveMonthlyReimbursement,
+      allocation,
     }),
-    [state, year, setYear, reload, setup, saveMember, deleteMember, moveMember, saveRecord, deleteRecordById, loadReceipt],
+    [
+      state,
+      year,
+      setYear,
+      reload,
+      setup,
+      saveMember,
+      deleteMember,
+      moveMember,
+      saveRecord,
+      deleteRecordById,
+      loadReceipt,
+      saveMonthlyReimbursement,
+      allocation,
+    ],
   );
 
   return <LedgerContext.Provider value={value}>{children}</LedgerContext.Provider>;

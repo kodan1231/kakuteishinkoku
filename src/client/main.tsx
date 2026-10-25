@@ -16,6 +16,7 @@ import { OcrLab } from "./pages/OcrLab";
 import { Privacy } from "./pages/Privacy";
 import { RecordEdit } from "./pages/RecordEdit";
 import { Records } from "./pages/Records";
+import { Reimbursements } from "./pages/Reimbursements";
 import { Settings } from "./pages/Settings";
 import { Setup } from "./pages/Setup";
 import { Terms } from "./pages/Terms";
@@ -46,6 +47,7 @@ createRoot(document.getElementById("root")!).render(
               <Route path="/records" element={<Records />} />
               <Route path="/records/new" element={<RecordEdit />} />
               <Route path="/records/:id" element={<RecordEdit />} />
+              <Route path="/reimbursements" element={<Reimbursements />} />
               <Route path="/settings" element={<Settings />} />
               <Route path="/settings/family" element={<FamilySettings />} />
             </Route>
