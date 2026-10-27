@@ -11,7 +11,13 @@ export interface ReceiptFields {
   confidence: string | null;
   /** 読み取りに自信がない項目 */
   uncertain: ("date" | "payee" | "amount")[];
+  /** 患者名（宛名）。家族設定の名前と照らし合わせて医療を受けた人を選ぶ */
+  patient: string | null;
 }
+
+/** 読み取りのときに AI に伝える過去の支払先の上限 */
+export const OCR_KNOWN_PAYEES_MAX = 30;
+const KNOWN_PAYEE_MAX_LENGTH = 40;
 
 /** 本番の読み取りに使うモデル（Step 0 の検証で決定） */
 export const OCR_MODEL = "@cf/mistralai/mistral-small-3.1-24b-instruct";
@@ -23,6 +29,8 @@ export const OCR_IMAGE_MAX_EDGE = 1024;
 export interface OcrRequest {
   /** data:image/jpeg;base64,... 形式 */
   image: string;
+  /** 過去の支払先（近い表記があれば AI にそれを使わせる） */
+  knownPayees?: string[];
 }
 
 export interface OcrUsage {
@@ -66,7 +74,7 @@ export const OCR_CANDIDATE_MODELS = [
 
 export const OCR_PROMPT = `この画像は日本の領収書またはレシートです。次の項目を読み取り、JSON オブジェクトだけを出力してください。説明文やコードブロックは不要です。
 
-{"date_text": "支払日（領収書の表記どおり）", "payee": "発行元の名称", "payee_candidates": ["発行元の候補（確からしい順、最大3つ）"], "amount": 支払った合計金額（円、整数）, "category": "区分", "confidence": "high|medium|low", "uncertain": ["自信がない項目（date / payee / amount）"]}
+{"date_text": "支払日（領収書の表記どおり）", "payee": "発行元の名称", "payee_candidates": ["発行元の候補（確からしい順、最大3つ）"], "amount": 支払った合計金額（円、整数）, "category": "区分", "patient": "患者名", "confidence": "high|medium|low", "uncertain": ["自信がない項目（date / payee / amount）"]}
 
 ルール:
 - date_text は和暦・西暦を変換せず、領収書に書かれたとおりに書く（例: "令和8年2月3日"、"R8.2.3"、"2026/02/03"）。発行日・診療日・領収日があれば領収日（なければ発行日）を使う
@@ -79,5 +87,24 @@ export const OCR_PROMPT = `この画像は日本の領収書またはレシー�
 - category は次のいずれか: ${[...MEDICAL_CATEGORIES, "医療費以外"].join(" / ")}
   - 病院・クリニック・歯科の窓口支払い → 診療・治療
   - 薬局・調剤薬局・ドラッグストアでの支払い（処方箋による調剤を含む） → 医薬品購入
+- patient は「患者氏名」「氏名」「様」の付いた宛名など、医療を受けた人の名前。漢字の氏名があれば漢字（フリガナではなく）、「様」は付けない
 - 読み取れない項目は null にする
 - confidence は読み取り全体の確からしさ。uncertain には、かすれ・手書き・複数の候補などで自信がない項目を入れる`;
+
+/** 過去の支払先を添えた読み取りの指示（領収書の表記と近ければ、その表記を使わせる） */
+export function buildOcrPrompt(knownPayees: unknown): string {
+  const payees = Array.isArray(knownPayees)
+    ? [
+        ...new Set(
+          knownPayees
+            .filter((p): p is string => typeof p === "string")
+            .map((p) => p.trim().slice(0, KNOWN_PAYEE_MAX_LENGTH))
+            .filter(Boolean),
+        ),
+      ].slice(0, OCR_KNOWN_PAYEES_MAX)
+    : [];
+  if (payees.length === 0) return OCR_PROMPT;
+  return `${OCR_PROMPT}
+- この利用者の過去の支払先: ${payees.map((p) => JSON.stringify(p)).join("、")}
+  領収書の発行元がこのどれかと同じ（読み取りの揺れや表記の違いだけ）と判断できる場合は、payee にその表記を使う。違う支払先なら無理に合わせない`;
+}

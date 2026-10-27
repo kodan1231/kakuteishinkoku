@@ -105,6 +105,22 @@ export function payeeCandidates(
   return result;
 }
 
+/**
+ * 領収書の患者名に一致する家族の id。表記ゆれを除いて同じ名前 → 片方がもう片方を含む（名前だけ・苗字だけの表記）
+ * → 1文字違い、の順に探し、1人に決まらなければ null。
+ */
+export function matchFamilyMember(patient: string, family: { id: string; name: string }[]): string | null {
+  const p = normalizePayee(patient.replace(/(様|殿)$/, ""));
+  if (!p) return null;
+  const names = family.map((f) => ({ id: f.id, n: normalizePayee(f.name) })).filter((f) => f.n);
+  const pick = (hits: { id: string }[]) => (hits.length === 1 ? hits[0].id : null);
+  const exact = names.filter((f) => f.n === p);
+  if (exact.length > 0) return pick(exact);
+  const contained = names.filter((f) => p.includes(f.n) || f.n.includes(p));
+  if (contained.length > 0) return pick(contained);
+  return pick(names.filter((f) => editDistance(f.n, p) <= 1));
+}
+
 /** 修正を記録する（同じ読み取り・修正の組なら回数を増やす） */
 export function recordCorrection(data: OcrCorrectionsData, read: string, corrected: string, now: string): OcrCorrectionsData {
   const r = read.trim();

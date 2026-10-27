@@ -6,7 +6,7 @@ import { DateSelect } from "../components/DateSelect";
 import { buttonClass, ErrorText, inputClass, NoticeText, Page, subButtonClass, WarningText } from "../components/Layout";
 import { LocalFilePreview, ReceiptPreview } from "../components/ReceiptPreview";
 import type { FamilyMember } from "../drive/ledger";
-import { payeeCandidates, type PayeeCandidateSource } from "../drive/ocrCorrections";
+import { matchFamilyMember, payeeCandidates, type PayeeCandidateSource } from "../drive/ocrCorrections";
 import { useReadyLedger } from "../drive/LedgerProvider";
 import {
   emptyTransport,
@@ -86,6 +86,8 @@ interface OcrState {
   /** 読み取りに自信がなく、まだ利用者が触っていない項目 */
   uncertain: (keyof RecordInput)[];
   warnings: string[];
+  /** 患者名から医療を受けた人を選んだ、などのお知らせ */
+  notes?: string[];
 }
 
 function RecordForm({
@@ -119,13 +121,14 @@ function RecordForm({
     clearHandedOffPhoto();
     if (!photo || ocrStarted.current) return;
     ocrStarted.current = true;
-    read(photo).then(
+    const knownPayees = [...new Set([...ocrCorrections.map((c) => c.corrected), ...payeeSuggestions(records)])];
+    read(photo, knownPayees).then(
       (res) => {
         if (!res.fields) {
           setOcr({ status: "failed", message: "読み取れませんでした。手入力してください", candidates: [], uncertain: [], warnings: [] });
           return;
         }
-        const applied = applyOcr(res.fields, year, records);
+        const applied = applyOcr(res.fields, year, records, family);
         setForm((f) => ({
           input: { ...f.input, ...applied.input },
           withTransport: applied.transport ? true : f.withTransport,
@@ -137,12 +140,13 @@ function RecordForm({
           candidates: res.fields.payeeCandidates,
           uncertain: applied.uncertain,
           warnings: applied.warnings,
+          notes: applied.notes,
         });
       },
       (e: unknown) =>
         setOcr({ status: "failed", message: e instanceof Error ? e.message : String(e), candidates: [], uncertain: [], warnings: [] }),
     );
-  }, [photo, read, year, records]);
+  }, [photo, read, year, records, family, ocrCorrections]);
 
   const reading = ocr?.status === "reading";
   const locked = busy || reading;
@@ -230,6 +234,7 @@ function RecordForm({
         <NoticeText>
           写真から読み取りました。内容を確認してください。
           {ocr.uncertain.length > 0 && "枠が黄色の項目は読み取りに自信がありません。"}
+          {ocr.notes?.map((n) => ` ${n}`)}
         </NoticeText>
       )}
       {ocr?.warnings.map((w) => (
@@ -452,9 +457,28 @@ function applyOcr(
   fields: ReceiptFields,
   year: number,
   records: MedicalRecord[],
-): { input: Partial<RecordInput>; transport: TransportInput | null; uncertain: (keyof RecordInput)[]; warnings: string[] } {
+  family: FamilyMember[],
+): {
+  input: Partial<RecordInput>;
+  transport: TransportInput | null;
+  uncertain: (keyof RecordInput)[];
+  warnings: string[];
+  notes: string[];
+} {
   const input: Partial<RecordInput> = {};
   const warnings: string[] = [];
+  const notes: string[] = [];
+  // 患者名が家族の誰かに一致すれば、その人を医療を受けた人にする（一致しなければ本人のまま）
+  if (fields.patient) {
+    const personId = matchFamilyMember(fields.patient, family);
+    const person = family.find((f) => f.id === personId);
+    if (person) {
+      input.personId = person.id;
+      notes.push(`医療を受けた人は、領収書の患者名「${fields.patient}」から${person.name}さんを選びました。`);
+    } else {
+      notes.push(`領収書の患者名「${fields.patient}」に一致する家族が見つからないため、医療を受けた人を確認してください。`);
+    }
+  }
   if (fields.date?.startsWith(`${year}-`)) {
     input.date = fields.date;
   } else if (fields.date) {
@@ -476,7 +500,7 @@ function applyOcr(
   const linked = prev ? findLinkedTransport(records, prev) : null;
   const transport = linked ? transportFromRecord(linked) : null;
   const uncertain = fields.uncertain.filter((f) => f !== "date" || input.date) as (keyof RecordInput)[];
-  return { input, transport, uncertain, warnings };
+  return { input, transport, uncertain, warnings, notes };
 }
 
 function RecentPayees({

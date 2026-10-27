@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { OCR_DAILY_LIMIT, OCR_MODEL, type OcrRequest, type OcrResponse, type OcrUsage } from "../../shared/ocr";
+import { buildOcrPrompt, OCR_DAILY_LIMIT, OCR_MODEL, type OcrRequest, type OcrResponse, type OcrUsage } from "../../shared/ocr";
 import type { AppEnv } from "../env";
 import { consumeOcrUsage, getOcrUsage, jstDate, refundOcrUsage } from "../lib/db";
 import { runReceiptOcr } from "../lib/ocr";
@@ -31,7 +31,7 @@ ocr.post("/", async (c) => {
   if (used === null) {
     return c.json({ error: `今日の読み取り回数の上限（${OCR_DAILY_LIMIT}回）に達しました。手入力してください`, code: "limit" }, 429);
   }
-  const result = await runReceiptOcr(c.env.AI, OCR_MODEL, body.image);
+  const result = await runReceiptOcr(c.env.AI, OCR_MODEL, body.image, buildOcrPrompt(body.knownPayees));
   if (!result.ok) {
     await refundOcrUsage(c.env.DB, userId, date);
     console.error("OCR failed", result.error);

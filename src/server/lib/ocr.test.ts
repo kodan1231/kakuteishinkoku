@@ -1,5 +1,22 @@
 import { describe, expect, it } from "vitest";
+import { buildOcrPrompt, OCR_KNOWN_PAYEES_MAX, OCR_PROMPT } from "../../shared/ocr";
 import { parseDateText, parseFields } from "./ocr";
+
+describe("buildOcrPrompt", () => {
+  it("過去の支払先を重複なく上限まで添える", () => {
+    const many = Array.from({ length: 50 }, (_, i) => `支払先${i}`);
+    const prompt = buildOcrPrompt(["ロハル", " ロハル ", 1, ...many]);
+    expect(prompt).toContain('"ロハル"');
+    expect(prompt.match(/"ロハル"/g)).toHaveLength(1);
+    expect(prompt).toContain(`"支払先${OCR_KNOWN_PAYEES_MAX - 2}"`);
+    expect(prompt).not.toContain(`"支払先${OCR_KNOWN_PAYEES_MAX - 1}"`);
+  });
+
+  it("過去の支払先が無ければ基本の指示のまま", () => {
+    expect(buildOcrPrompt(undefined)).toBe(OCR_PROMPT);
+    expect(buildOcrPrompt([])).toBe(OCR_PROMPT);
+  });
+});
 
 describe("parseDateText", () => {
   it("和暦を西暦にする", () => {
@@ -34,7 +51,12 @@ describe("parseFields", () => {
       category: "診療・治療",
       confidence: "high",
       uncertain: [],
+      patient: null,
     });
+  });
+
+  it("患者名は「様」を除いて取り出す", () => {
+    expect(parseFields('{"patient":"小段 あゆみ 様"}')?.patient).toBe("小段 あゆみ");
   });
 
   it("支払先の候補を重複なく最大3つにし、自信のない項目を取り出す", () => {

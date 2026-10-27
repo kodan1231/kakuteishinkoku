@@ -7,8 +7,8 @@ import { resizeToDataUrl } from "./image";
 export function useOcr() {
   const api = useApi();
   const read = useCallback(
-    async (file: File): Promise<OcrResponse> => {
-      const body: OcrRequest = { image: await resizeToDataUrl(file, OCR_IMAGE_MAX_EDGE) };
+    async (file: File, knownPayees: string[] = []): Promise<OcrResponse> => {
+      const body: OcrRequest = { image: await resizeToDataUrl(file, OCR_IMAGE_MAX_EDGE), knownPayees };
       return api<OcrResponse>("/api/ocr", { method: "POST", body: JSON.stringify(body) });
     },
     [api],

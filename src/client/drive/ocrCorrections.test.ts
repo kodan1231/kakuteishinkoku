@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   editDistance,
   emptyCorrections,
+  matchFamilyMember,
   normalizePayee,
   parseCorrections,
   payeeCandidates,
@@ -53,6 +54,29 @@ describe("payeeCandidates", () => {
 
   it("短い名前は1文字違いまで", () => {
     expect(payeeCandidates(["ABC"], [], ["AXY"]).map((c) => c.source)).toEqual(["ocr"]);
+  });
+});
+
+describe("matchFamilyMember", () => {
+  const family = [
+    { id: "k", name: "小段圭司" },
+    { id: "a", name: "小段あゆみ" },
+  ];
+
+  it("空白・様・ひらがなカタカナの違いを無視して一致させる", () => {
+    expect(matchFamilyMember("小段 あゆみ 様", family)).toBe("a");
+    expect(matchFamilyMember("小段 アユミ", family)).toBe("a");
+    expect(matchFamilyMember("小段圭司", family)).toBe("k");
+  });
+
+  it("名前だけの表記でも1人に決まれば一致させる", () => {
+    expect(matchFamilyMember("あゆみ", family)).toBe("a");
+  });
+
+  it("苗字だけなど1人に決まらない・該当しない場合は null", () => {
+    expect(matchFamilyMember("小段", family)).toBeNull();
+    expect(matchFamilyMember("山田太郎", family)).toBeNull();
+    expect(matchFamilyMember("", family)).toBeNull();
   });
 });
 

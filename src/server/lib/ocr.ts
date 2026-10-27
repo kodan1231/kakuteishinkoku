@@ -3,10 +3,10 @@ import { OCR_PROMPT, type OcrLabResult, type ReceiptFields } from "../../shared/
 const LLAMA_3_2_VISION = "@cf/meta/llama-3.2-11b-vision-instruct";
 
 /** 画像（data URI）を指定モデルで読み取る */
-export async function runReceiptOcr(ai: Ai, model: string, image: string): Promise<OcrLabResult> {
+export async function runReceiptOcr(ai: Ai, model: string, image: string, prompt = OCR_PROMPT): Promise<OcrLabResult> {
   const started = Date.now();
   try {
-    const output = await runWithLicenseAgreement(ai, model, buildInput(model, image));
+    const output = await runWithLicenseAgreement(ai, model, buildInput(model, image, prompt));
     const { text, usage } = extractText(output);
     return {
       model,
@@ -29,13 +29,13 @@ export async function runReceiptOcr(ai: Ai, model: string, image: string): Promi
   }
 }
 
-function buildInput(model: string, image: string): Record<string, unknown> {
+function buildInput(model: string, image: string, prompt: string): Record<string, unknown> {
   const input: Record<string, unknown> = {
     messages: [
       {
         role: "user",
         content: [
-          { type: "text", text: OCR_PROMPT },
+          { type: "text", text: prompt },
           { type: "image_url", image_url: { url: image } },
         ],
       },
@@ -149,6 +149,7 @@ export function parseFields(text: string, now = new Date()): ReceiptFields | nul
     category: typeof obj.category === "string" ? obj.category : null,
     confidence: typeof obj.confidence === "string" ? obj.confidence : null,
     uncertain,
+    patient: typeof obj.patient === "string" && obj.patient.trim() ? obj.patient.trim().replace(/\s*(様|殿)$/, "") : null,
   };
 }
 
