@@ -75,6 +75,15 @@ export class GoogleClient {
     });
   }
 
+  /** 既存ファイルの中身を置き換える */
+  async updateFileContent(id: string, content: Blob, mimeType: string): Promise<void> {
+    await this.request(`${DRIVE_UPLOAD}/${id}?uploadType=media`, {
+      method: "PATCH",
+      headers: { "Content-Type": mimeType },
+      body: content,
+    });
+  }
+
   getFileMeta(id: string): Promise<{ id: string; name: string; mimeType: string }> {
     return this.request(`${DRIVE_FILES}/${id}?fields=id,name,mimeType`);
   }

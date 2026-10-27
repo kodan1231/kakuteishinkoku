@@ -6,6 +6,7 @@ import { DateSelect } from "../components/DateSelect";
 import { buttonClass, ErrorText, inputClass, NoticeText, Page, subButtonClass, WarningText } from "../components/Layout";
 import { LocalFilePreview, ReceiptPreview } from "../components/ReceiptPreview";
 import type { FamilyMember } from "../drive/ledger";
+import { payeeCandidates, type PayeeCandidateSource } from "../drive/ocrCorrections";
 import { useReadyLedger } from "../drive/LedgerProvider";
 import {
   emptyTransport,
@@ -33,6 +34,11 @@ import { clearHandedOffPhoto, peekHandedOffPhoto, useOcr } from "../lib/ocr";
 /** 交通費を一緒に入力できる区分 */
 const VISIT_CATEGORY = "診療・治療";
 const RECENT_PAYEES = 5;
+const CANDIDATE_LABELS: Record<PayeeCandidateSource, string> = {
+  correction: "以前の修正",
+  past: "過去の支払先",
+  ocr: "読み取り",
+};
 /** 読み取りに自信がないときに目立たせる */
 const uncertainClass = " ring-2 ring-amber-400";
 
@@ -74,6 +80,8 @@ interface FormState {
 interface OcrState {
   status: "reading" | "done" | "failed";
   message?: string;
+  /** 読み取った支払先（手で直したら修正記録に残す） */
+  readPayee?: string;
   candidates: string[];
   /** 読み取りに自信がなく、まだ利用者が触っていない項目 */
   uncertain: (keyof RecordInput)[];
@@ -90,7 +98,8 @@ function RecordForm({
   withPhoto: boolean;
 }) {
   const navigate = useNavigate();
-  const { year, family, records, saveRecord, deleteRecord, allocation } = useReadyLedger();
+  const { year, family, records, saveRecord, deleteRecord, allocation, ocrCorrections, recordOcrCorrection } =
+    useReadyLedger();
   const { read } = useOcr();
   const allocated = existing ? (allocation.byRecord.get(existing.id) ?? 0) : 0;
   const [photo] = useState(() => (withPhoto ? peekHandedOffPhoto() : null));
@@ -122,7 +131,13 @@ function RecordForm({
           withTransport: applied.transport ? true : f.withTransport,
           transport: applied.transport ?? f.transport,
         }));
-        setOcr({ status: "done", candidates: res.fields.payeeCandidates, uncertain: applied.uncertain, warnings: applied.warnings });
+        setOcr({
+          status: "done",
+          readPayee: res.fields.payee ?? undefined,
+          candidates: res.fields.payeeCandidates,
+          uncertain: applied.uncertain,
+          warnings: applied.warnings,
+        });
       },
       (e: unknown) =>
         setOcr({ status: "failed", message: e instanceof Error ? e.message : String(e), candidates: [], uncertain: [], warnings: [] }),
@@ -188,17 +203,20 @@ function RecordForm({
     const errs = mode === "draft" ? validateDraft(v, year) : validateRecord(v, year);
     const tErrs = mode === "final" && transportOn ? validateTransport(form.transport) : {};
     if (Object.keys(errs).length + Object.keys(tErrs).length > 0) return;
-    void run(() =>
-      saveRecord(v, {
+    void run(async () => {
+      await saveRecord(v, {
         id: existing?.id,
         newFiles,
         removedFileIds: removed,
         transport: mode === "final" && transportOn ? form.transport : undefined,
         draft: mode === "draft",
         source: photo ? "ocr" : undefined,
-      }),
-    );
+      });
+      // 読み取った支払先を直していたら、次回の候補に出すため記録する（失敗しても記録の保存は済んでいる）
+      if (ocr?.readPayee && v.payee.trim()) void recordOcrCorrection(ocr.readPayee, v.payee.trim()).catch(() => undefined);
+    });
   };
+  const candidates = ocr ? payeeCandidates(ocr.candidates, ocrCorrections, payeeSuggestions(records)) : [];
 
   return (
     <Page title={isDraft ? "一時保存の記録" : existing ? "記録の編集" : "記録する"}>
@@ -242,19 +260,20 @@ function RecordForm({
         </select>
       </Field>
 
-      {ocr && ocr.candidates.length > 1 && (
+      {candidates.length > 1 && (
         <section className="space-y-1">
-          <div className="text-sm text-gray-600">支払先の候補（領収書から読み取り）</div>
+          <div className="text-sm text-gray-600">支払先の候補（タップで選択）</div>
           <div className="flex flex-wrap gap-2">
-            {ocr.candidates.map((p) => (
+            {candidates.map((p) => (
               <button
-                key={p}
+                key={p.name}
                 type="button"
-                className={`${subButtonClass}${v.payee === p ? " border-teal-700 bg-teal-50" : ""}`}
+                className={`${subButtonClass}${v.payee === p.name ? " border-teal-700 bg-teal-50" : ""}`}
                 disabled={locked}
-                onClick={() => choosePayee(p)}
+                onClick={() => choosePayee(p.name)}
               >
-                {p}
+                {p.name}
+                <span className="ml-1 text-xs text-gray-500">{CANDIDATE_LABELS[p.source]}</span>
               </button>
             ))}
           </div>

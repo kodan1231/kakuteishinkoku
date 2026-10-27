@@ -14,6 +14,8 @@ interface CachedLedger {
 interface CacheData {
   root?: { id: string; consentedAt?: string };
   ledgers: Record<string, CachedLedger>;
+  /** 年度によらないファイル（OCR の修正記録など）の ID */
+  files?: Record<string, string>;
 }
 
 export class LedgerCache {
@@ -27,7 +29,7 @@ export class LedgerCache {
   load(): CacheData {
     try {
       const data = JSON.parse(loadString(this.key) ?? "null") as Partial<CacheData> | null;
-      return { root: data?.root, ledgers: data?.ledgers ?? {} };
+      return { root: data?.root, ledgers: data?.ledgers ?? {}, files: data?.files ?? {} };
     } catch {
       return { ledgers: {} };
     }
@@ -45,6 +47,18 @@ export class LedgerCache {
     }
     else delete data.ledgers[year];
     this.save(data);
+  }
+
+  getFile(key: string): string | undefined {
+    return this.load().files?.[key];
+  }
+
+  setFile(key: string, id: string | undefined): void {
+    const data = this.load();
+    const files = { ...data.files };
+    if (id) files[key] = id;
+    else delete files[key];
+    this.save({ ...data, files });
   }
 
   private save(data: CacheData): void {

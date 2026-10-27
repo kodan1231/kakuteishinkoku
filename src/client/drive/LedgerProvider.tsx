@@ -16,6 +16,8 @@ import {
   deleteReimbursement,
   findRoot,
   loadLedgerData,
+  loadOcrCorrections,
+  saveOcrCorrections,
   openLedger,
   renameReceipts,
   reorderFamily,
@@ -39,6 +41,13 @@ import {
   type TransportInput,
 } from "./records";
 import { allocate, DEFAULT_REIMBURSEMENT_KIND, type Allocation, type MonthlyReimbursement } from "./reimbursements";
+import {
+  emptyCorrections,
+  recordCorrection,
+  removeCorrection,
+  type OcrCorrection,
+  type OcrCorrectionsData,
+} from "./ocrCorrections";
 
 /**
  * 選択中の年度の台帳と家族の状態。
@@ -111,6 +120,11 @@ interface LedgerContextValue {
   saveMonthlyReimbursement: (input: MonthlyReimbursementInput) => Promise<void>;
   /** 月ごとの補填の記録への配分（台帳の準備ができるまでは空） */
   allocation: Allocation;
+  /** 写真の読み取りで支払先を手で直した記録 */
+  ocrCorrections: OcrCorrection[];
+  /** 読み取った支払先と直した支払先の組を記録する（同じなら何もしない） */
+  recordOcrCorrection: (read: string, corrected: string) => Promise<void>;
+  deleteOcrCorrection: (read: string, corrected: string) => Promise<void>;
 }
 
 const RECEIPT_MAX_EDGE = 1600;
@@ -390,6 +404,44 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
     [client, withReady],
   );
 
+  // OCR の修正記録は台帳とは別のファイル。読めなくても記録の入力には影響しないため、失敗は無視する
+  const [corrections, setCorrections] = useState<OcrCorrectionsData>(emptyCorrections);
+  const correctionsRef = useRef(corrections);
+  correctionsRef.current = corrections;
+  const ready = state.status === "ready";
+  useEffect(() => {
+    if (!ready) return;
+    let cancelled = false;
+    loadOcrCorrections(client, cache).then(
+      (data) => !cancelled && setCorrections(data),
+      () => undefined,
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [ready, client, cache]);
+
+  const updateCorrections = useCallback(
+    async (next: OcrCorrectionsData) => {
+      const s = stateRef.current;
+      if (s.status !== "ready" || next === correctionsRef.current) return;
+      setCorrections(next);
+      await saveOcrCorrections(client, cache, s.ledger.rootFolderId, next);
+    },
+    [client, cache],
+  );
+
+  const recordOcrCorrection = useCallback(
+    (read: string, corrected: string) =>
+      updateCorrections(recordCorrection(correctionsRef.current, read, corrected, new Date().toISOString())),
+    [updateCorrections],
+  );
+
+  const deleteOcrCorrection = useCallback(
+    (read: string, corrected: string) => updateCorrections(removeCorrection(correctionsRef.current, read, corrected)),
+    [updateCorrections],
+  );
+
   const allocation = useMemo(
     () => (state.status === "ready" ? allocate(state.records, state.reimbursements) : allocate([], [])),
     [state],
@@ -410,8 +462,14 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
       loadReceipt,
       saveMonthlyReimbursement,
       allocation,
+      ocrCorrections: corrections.corrections,
+      recordOcrCorrection,
+      deleteOcrCorrection,
     }),
     [
+      corrections,
+      recordOcrCorrection,
+      deleteOcrCorrection,
       state,
       year,
       setYear,

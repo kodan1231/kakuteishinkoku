@@ -1,12 +1,14 @@
+import { useState } from "react";
 import { Link } from "react-router";
 import { useAuth } from "../auth/AuthProvider";
-import { inputClass, Page, subButtonClass } from "../components/Layout";
+import { ErrorText, inputClass, Page, subButtonClass } from "../components/Layout";
 import { driveFolderUrl, spreadsheetUrl, useReadyLedger } from "../drive/LedgerProvider";
 import { selectableYears } from "../lib/taxYear";
 
 export function Settings() {
   const { logout } = useAuth();
-  const { year, setYear, ledger } = useReadyLedger();
+  const { year, setYear, ledger, ocrCorrections, deleteOcrCorrection } = useReadyLedger();
+  const [error, setError] = useState<string | null>(null);
   return (
     <Page title="設定">
       <Link to="/" className="text-sm text-teal-700 underline">
@@ -40,6 +42,37 @@ export function Settings() {
           台帳（スプレッドシート）を開く
         </a>
       </nav>
+
+      <section className="space-y-1">
+        <h2 className="font-bold">写真の読み取りの修正記録</h2>
+        <p className="text-xs text-gray-500">
+          読み取った支払先を手で直すと記録され、次に同じ読み間違いがあったときに候補として表示されます。間違って覚えたものは削除してください。
+        </p>
+        {error && <ErrorText>{error}</ErrorText>}
+        <ul className="divide-y rounded border text-sm">
+          {ocrCorrections.map((c) => (
+            <li key={`${c.read}\u0000${c.corrected}`} className="flex items-center justify-between gap-2 p-2">
+              <span className="min-w-0">
+                {c.read} → <span className="font-bold">{c.corrected}</span>
+                <span className="ml-1 text-xs text-gray-500">{c.count}回</span>
+              </span>
+              <button
+                type="button"
+                className={subButtonClass}
+                onClick={() => {
+                  setError(null);
+                  deleteOcrCorrection(c.read, c.corrected).catch((e: unknown) =>
+                    setError(e instanceof Error ? e.message : String(e)),
+                  );
+                }}
+              >
+                削除
+              </button>
+            </li>
+          ))}
+          {ocrCorrections.length === 0 && <li className="p-2 text-gray-500">まだありません</li>}
+        </ul>
+      </section>
 
       <button type="button" className={subButtonClass} onClick={() => void logout()}>
         ログアウト

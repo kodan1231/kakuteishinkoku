@@ -20,6 +20,7 @@ import {
 } from "./ledger";
 import { medicalRow, parseMedical, receiptFileName, type MedicalRecord } from "./records";
 import { parseReimbursements, reimbursementRow, type MonthlyReimbursement } from "./reimbursements";
+import { emptyCorrections, parseCorrections, type OcrCorrectionsData } from "./ocrCorrections";
 
 /**
  * ドライブ上のフォルダ・台帳の検索と作成、家族・医療費シートの読み書き、領収書ファイルの保存。
@@ -345,6 +346,48 @@ export async function renameReceipts(
       if (meta.name !== name) await c.renameFile(id, name);
     }),
   );
+}
+
+const CORRECTIONS_FILE_NAME = "OCR修正記録.json";
+const CORRECTIONS_CACHE_KEY = "ocrCorrections";
+
+/** OCR の修正記録（ルートフォルダの JSON ファイル。年度をまたいで使う）。無ければ空 */
+export async function loadOcrCorrections(c: GoogleClient, cache: LedgerCache): Promise<OcrCorrectionsData> {
+  const id = await findCorrectionsFile(c, cache);
+  if (!id) return emptyCorrections();
+  return parseCorrections(await (await c.downloadFile(id)).text());
+}
+
+export async function saveOcrCorrections(
+  c: GoogleClient,
+  cache: LedgerCache,
+  rootId: string,
+  data: OcrCorrectionsData,
+): Promise<void> {
+  const content = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+  const id = await findCorrectionsFile(c, cache);
+  if (id) {
+    await c.updateFileContent(id, content, "application/json");
+    return;
+  }
+  const file = await c.uploadFile(
+    {
+      name: CORRECTIONS_FILE_NAME,
+      mimeType: "application/json",
+      parents: [rootId],
+      appProperties: { app: APP_ID, type: "ocrCorrections" },
+    },
+    content,
+  );
+  cache.setFile(CORRECTIONS_CACHE_KEY, file.id);
+}
+
+async function findCorrectionsFile(c: GoogleClient, cache: LedgerCache): Promise<string | null> {
+  const cached = cache.getFile(CORRECTIONS_CACHE_KEY);
+  if (cached && (await c.isAlive(cached))) return cached;
+  const file = (await c.findFiles({ app: APP_ID, type: "ocrCorrections" }))[0];
+  cache.setFile(CORRECTIONS_CACHE_KEY, file?.id);
+  return file?.id ?? null;
 }
 
 /** ゴミ箱へ移す（失敗しても記録の保存は終わっているため無視する） */

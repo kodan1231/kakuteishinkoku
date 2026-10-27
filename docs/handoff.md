@@ -104,7 +104,7 @@ src/shared/   型・定数
 migrations/   D1
 docs/         design.md（設計）, setup.md（手順）, handoff.md（このファイル）
 ```
-- チェック: `npm run typecheck` / `npm test`（68件）/ `npx vite build`
+- チェック: `npm run typecheck` / `npm test`（78件）/ `npx vite build`
 - Free プランの CPU 10ms 制限のため、重い処理（画像縮小・xlsx 生成）は端末側で行う方針
 
 ---
