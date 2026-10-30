@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { useLedger } from "../drive/LedgerProvider";
+import { saveToDevice } from "../lib/download";
 
 const boxClass = "flex h-24 w-24 items-center justify-center overflow-hidden rounded border bg-gray-50 text-xs text-gray-500";
 const actionClass = "text-xs text-teal-700 underline disabled:opacity-40";
@@ -48,31 +49,13 @@ export function ReceiptPreview({ fileId, children }: { fileId: string; children?
         )}
       </a>
       <div className="flex justify-center gap-2">
-        <button type="button" className={actionClass} disabled={!receipt} onClick={() => receipt && void saveToDevice(receipt)}>
+        <button type="button" className={actionClass} disabled={!receipt} onClick={() => receipt && void saveToDevice(new Blob([receipt.blob], { type: receipt.mimeType }), receipt.name)}>
           保存
         </button>
         {children}
       </div>
     </div>
   );
-}
-
-/** スマホは共有メニュー（「画像を保存」で写真アプリへ）、PC はダウンロード */
-async function saveToDevice(r: LoadedReceipt): Promise<void> {
-  const file = new File([r.blob], r.name, { type: r.mimeType });
-  if (matchMedia("(pointer: coarse)").matches && navigator.canShare?.({ files: [file] })) {
-    try {
-      await navigator.share({ files: [file] });
-      return;
-    } catch (e) {
-      if (e instanceof DOMException && e.name === "AbortError") return;
-      // 共有できなければダウンロードにする
-    }
-  }
-  const a = document.createElement("a");
-  a.href = r.url;
-  a.download = r.name;
-  a.click();
 }
 
 /** 保存前に選んだファイル */

@@ -21,10 +21,12 @@ import {
   openLedger,
   renameReceipts,
   reorderFamily,
+  saveIncome,
   saveReimbursement,
   trashFiles,
   updateFamilyMember,
   updateRecord,
+  uploadOutput,
   uploadReceipts,
   type Ledger,
   type ReceiptContent,
@@ -64,6 +66,8 @@ export type LedgerState =
       records: MedicalRecord[];
       /** 月ごとの補填（健保給付など） */
       reimbursements: MonthlyReimbursement[];
+      /** 設定シートの総所得金額等（未入力なら null） */
+      income: number | null;
       /** 同じ年度の台帳が複数あるなど */
       warnings: string[];
       /** 見出しの変更・id の重複など、台帳の中身の問題 */
@@ -125,6 +129,10 @@ interface LedgerContextValue {
   /** 読み取った支払先と直した支払先の組を記録する（同じなら何もしない） */
   recordOcrCorrection: (read: string, corrected: string) => Promise<void>;
   deleteOcrCorrection: (read: string, corrected: string) => Promise<void>;
+  /** 総所得金額等を設定シートに保存する（null なら空欄） */
+  saveIncome: (income: number | null) => Promise<void>;
+  /** 集計フォーム・CSV をドライブの「出力」フォルダに保存し、ファイル ID を返す */
+  saveOutput: (name: string, content: Blob) => Promise<string>;
 }
 
 const RECEIPT_MAX_EDGE = 1600;
@@ -196,6 +204,7 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
             family: data.members,
             records: data.records,
             reimbursements: data.reimbursements,
+            income: data.income,
             problems: data.problems,
           };
         })().finally(() => inflight.current.delete(y));
@@ -253,6 +262,7 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
               family: data.members,
               records: data.records,
               reimbursements: data.reimbursements,
+              income: data.income,
               problems: data.problems,
             }
           : cur,
@@ -404,6 +414,20 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
     [client, withReady],
   );
 
+  const saveIncomeValue = useCallback(
+    (income: number | null) => withReady((s) => saveIncome(client, s.ledger.spreadsheetId, income)),
+    [client, withReady],
+  );
+
+  const saveOutput = useCallback(
+    async (name: string, content: Blob) => {
+      const s = stateRef.current;
+      if (s.status !== "ready") throw new Error("台帳の準備ができていません");
+      return (await uploadOutput(client, cache, s.ledger, name, content)).id;
+    },
+    [client, cache],
+  );
+
   // OCR の修正記録は台帳とは別のファイル。読めなくても記録の入力には影響しないため、失敗は無視する
   const [corrections, setCorrections] = useState<OcrCorrectionsData>(emptyCorrections);
   const correctionsRef = useRef(corrections);
@@ -465,8 +489,12 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
       ocrCorrections: corrections.corrections,
       recordOcrCorrection,
       deleteOcrCorrection,
+      saveIncome: saveIncomeValue,
+      saveOutput,
     }),
     [
+      saveIncomeValue,
+      saveOutput,
       corrections,
       recordOcrCorrection,
       deleteOcrCorrection,

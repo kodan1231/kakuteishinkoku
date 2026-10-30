@@ -7,16 +7,18 @@ import { StartRecord } from "../components/StartRecord";
 import { useReadyLedger } from "../drive/LedgerProvider";
 import { isFinal } from "../drive/records";
 import { totalReimbursed } from "../drive/reimbursements";
+import { estimateDeduction } from "../drive/summary";
 import { formatYen } from "../lib/format";
 import { useOcr } from "../lib/ocr";
 
 export function Home() {
   const { user } = useAuth();
-  const { year, records, warnings, problems, notice, allocation } = useReadyLedger();
+  const { year, records, warnings, problems, notice, allocation, income } = useReadyLedger();
   const finals = records.filter(isFinal);
   const drafts = records.length - finals.length;
   const total = finals.reduce((sum, r) => sum + r.amount, 0);
   const reimbursed = finals.reduce((sum, r) => sum + totalReimbursed(r, allocation), 0);
+  const { deduction } = estimateDeduction(total - reimbursed, income);
   const usage = useOcrUsage();
   return (
     <Page title="確定申告サポート">
@@ -33,6 +35,9 @@ export function Home() {
           支払額 {formatYen(total)}
           {reimbursed > 0 && ` − 補填 ${formatYen(reimbursed)}`}
         </div>
+        <Link to="/summary" className="block pt-1 text-sm text-teal-700 underline">
+          医療費控除の見込額 {formatYen(deduction)}（集計・出力へ）
+        </Link>
       </section>
 
       {drafts > 0 && (
@@ -47,6 +52,9 @@ export function Home() {
       <nav className="flex flex-col gap-2">
         <Link to="/records" className="text-teal-700 underline">
           記録一覧
+        </Link>
+        <Link to="/summary" className="text-teal-700 underline">
+          集計・出力（医療費集計フォーム）
         </Link>
         <Link to="/reimbursements" className="text-teal-700 underline">
           健保給付・補填（月ごと）

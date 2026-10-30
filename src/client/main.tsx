@@ -18,6 +18,7 @@ import { Records } from "./pages/Records";
 import { Reimbursements } from "./pages/Reimbursements";
 import { Settings } from "./pages/Settings";
 import { Setup } from "./pages/Setup";
+import { Summary } from "./pages/Summary";
 import { Terms } from "./pages/Terms";
 
 createRoot(document.getElementById("root")!).render(
@@ -46,6 +47,7 @@ createRoot(document.getElementById("root")!).render(
               <Route path="/records/new" element={<RecordEdit />} />
               <Route path="/records/:id" element={<RecordEdit />} />
               <Route path="/reimbursements" element={<Reimbursements />} />
+              <Route path="/summary" element={<Summary />} />
               <Route path="/settings" element={<Settings />} />
               <Route path="/settings/family" element={<FamilySettings />} />
             </Route>

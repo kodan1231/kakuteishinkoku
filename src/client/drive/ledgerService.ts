@@ -21,6 +21,7 @@ import {
 import { medicalRow, parseMedical, receiptFileName, type MedicalRecord } from "./records";
 import { parseReimbursements, reimbursementRow, type MonthlyReimbursement } from "./reimbursements";
 import { emptyCorrections, parseCorrections, type OcrCorrectionsData } from "./ocrCorrections";
+import { INCOME_KEY, incomeRow, parseIncome } from "./summary";
 
 /**
  * ドライブ上のフォルダ・台帳の検索と作成、家族・医療費シートの読み書き、領収書ファイルの保存。
@@ -148,6 +149,8 @@ export interface LedgerData {
   members: FamilyRow[];
   records: MedicalRecord[];
   reimbursements: MonthlyReimbursement[];
+  /** 設定シートの総所得金額等（未入力なら null） */
+  income: number | null;
   problems: string[];
 }
 
@@ -176,11 +179,12 @@ export async function loadLedgerData(c: GoogleClient, spreadsheetId: string): Pr
   }
   if (schema && schema.version < 3) await migrateToV3(c, spreadsheetId, schema.row);
   // 補填シートは版3で追加したため、移行の後に読む
-  const [reimbursement] = await c.batchGetValues(spreadsheetId, [
+  const [reimbursement, settings] = await c.batchGetValues(spreadsheetId, [
     sheetRange(SHEET.reimbursement, `A1:${REIMBURSEMENT_LAST_COLUMN}`),
+    sheetRange(SHEET.settings, "A1:B"),
   ]).catch((e: unknown) => {
     if (e instanceof GoogleApiError && e.status === 400) {
-      throw new Error(`台帳のシート（${SHEET.reimbursement}）が見つかりません。シート名を元に戻してください`);
+      throw new Error(`台帳のシート（${SHEET.reimbursement}・${SHEET.settings}）が見つかりません。シート名を元に戻してください`);
     }
     throw e;
   });
@@ -191,8 +195,18 @@ export async function loadLedgerData(c: GoogleClient, spreadsheetId: string): Pr
     members: f.members,
     records: m.records,
     reimbursements: r.entries,
+    income: parseIncome(settings),
     problems: [...f.problems, ...m.problems, ...r.problems],
   };
+}
+
+/** 設定シートの総所得金額等を書き込む（null なら空欄にする）。行が無ければ追加する */
+export async function saveIncome(c: GoogleClient, spreadsheetId: string, income: number | null): Promise<void> {
+  const [settings] = await c.batchGetValues(spreadsheetId, [sheetRange(SHEET.settings, "A1:B")]);
+  const row = incomeRow(settings);
+  const value = income ?? "";
+  if (row) await c.updateValues(spreadsheetId, [{ range: sheetRange(SHEET.settings, `B${row}`), values: [[value]] }]);
+  else await c.appendValues(spreadsheetId, sheetRange(SHEET.settings, "A:B"), [[INCOME_KEY, value]]);
 }
 
 /** 版1 → 2: 医療費シートに「状態」列の見出しを追加する（既存の行は空欄＝確定のまま） */
@@ -295,6 +309,33 @@ async function ensureReceiptFolder(c: GoogleClient, cache: LedgerCache, ledger: 
     (await c.createFile({ name: RECEIPT_FOLDER_NAME, mimeType: FOLDER_MIME, parents: [ledger.yearFolderId], appProperties: props }));
   cache.setLedger(ledger.year, { ...ledger, receiptFolderId: folder.id });
   return folder.id;
+}
+
+const OUTPUT_FOLDER_NAME = "出力";
+
+/** 年度フォルダ内の「出力」フォルダに、集計フォーム・CSV を保存する */
+export async function uploadOutput(
+  c: GoogleClient,
+  cache: LedgerCache,
+  ledger: Ledger,
+  name: string,
+  content: Blob,
+): Promise<DriveFile> {
+  const cacheKey = `outputFolder.${ledger.year}`;
+  const cached = cache.getFile(cacheKey);
+  let folderId = cached && (await c.isAlive(cached)) ? cached : undefined;
+  if (!folderId) {
+    const props = { app: APP_ID, type: "outputFolder", year: String(ledger.year) };
+    const folder =
+      (await c.findFiles(props))[0] ??
+      (await c.createFile({ name: OUTPUT_FOLDER_NAME, mimeType: FOLDER_MIME, parents: [ledger.yearFolderId], appProperties: props }));
+    folderId = folder.id;
+    cache.setFile(cacheKey, folderId);
+  }
+  return c.uploadFile(
+    { name, mimeType: content.type, parents: [folderId], appProperties: { app: APP_ID, type: "output", year: String(ledger.year) } },
+    content,
+  );
 }
 
 export interface ReceiptContent {

@@ -8,6 +8,7 @@ import { LocalFilePreview, ReceiptPreview } from "../components/ReceiptPreview";
 import type { FamilyMember } from "../drive/ledger";
 import { matchFamilyMember, payeeCandidates, type PayeeCandidateSource } from "../drive/ocrCorrections";
 import { useReadyLedger } from "../drive/LedgerProvider";
+import { recordsPath } from "../drive/recordFilter";
 import {
   emptyTransport,
   findLinkedTransport,
@@ -51,7 +52,7 @@ export function RecordEdit() {
     return (
       <Page title="記録">
         <ErrorText>記録が見つかりません。削除されたか、別の年度の記録です。</ErrorText>
-        <Link to="/records" className="text-sm text-teal-700 underline">
+        <Link to={recordsPath()} className="text-sm text-teal-700 underline">
           ← 記録一覧
         </Link>
       </Page>
@@ -195,7 +196,7 @@ function RecordForm({
     setError(null);
     try {
       await f();
-      navigate("/records");
+      navigate(recordsPath());
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
       setBusy(false);
@@ -224,7 +225,7 @@ function RecordForm({
 
   return (
     <Page title={isDraft ? "一時保存の記録" : existing ? "記録の編集" : "記録する"}>
-      <Link to="/records" className="text-sm text-teal-700 underline">
+      <Link to={recordsPath()} className="text-sm text-teal-700 underline">
         ← 記録一覧
       </Link>
       {error && <ErrorText>{error}</ErrorText>}
