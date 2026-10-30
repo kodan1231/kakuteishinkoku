@@ -45,13 +45,7 @@ export interface OcrResponse {
   usage: OcrUsage;
 }
 
-export interface OcrLabRequest {
-  model: string;
-  /** data:image/jpeg;base64,... 形式 */
-  image: string;
-}
-
-export interface OcrLabResult {
+export interface OcrResult {
   model: string;
   ok: boolean;
   elapsedMs: number;
@@ -60,17 +54,6 @@ export interface OcrLabResult {
   raw: string;
   error?: string;
 }
-
-/** 検証ページで比較する候補モデル（Workers AI の画像入力対応モデル） */
-export const OCR_CANDIDATE_MODELS = [
-  { id: "@cf/meta/llama-4-scout-17b-16e-instruct", label: "Llama 4 Scout 17B" },
-  { id: "@cf/google/gemma-3-12b-it", label: "Gemma 3 12B" },
-  { id: "@cf/google/gemma-4-26b-a4b-it", label: "Gemma 4 26B A4B" },
-  { id: "@cf/mistralai/mistral-small-3.1-24b-instruct", label: "Mistral Small 3.1 24B" },
-  { id: "@cf/meta/llama-3.2-11b-vision-instruct", label: "Llama 3.2 11B Vision" },
-  { id: "@cf/moonshotai/kimi-k2.6", label: "Kimi K2.6（大型・消費大の可能性）" },
-  { id: "@cf/qwen/qwen3.8-27b", label: "Qwen 3.8 27B（画像対応か要確認）" },
-] as const;
 
 export const OCR_PROMPT = `この画像は日本の領収書またはレシートです。次の項目を読み取り、JSON オブジェクトだけを出力してください。説明文やコードブロックは不要です。
 

@@ -18,7 +18,7 @@
       "migrations_dir": "migrations"
     }
   ],
-  // GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET / ADMIN_EMAIL / OCR_LAB_KEY はダッシュボードで設定する。
+  // GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET / ADMIN_EMAIL はダッシュボードで設定する。
   // 自動デプロイで消えないように、ダッシュボード側の変数を保持する。
   "keep_vars": true,
   "observability": {

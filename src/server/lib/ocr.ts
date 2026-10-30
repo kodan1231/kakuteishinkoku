@@ -1,9 +1,9 @@
-import { OCR_PROMPT, type OcrLabResult, type ReceiptFields } from "../../shared/ocr";
+import { OCR_PROMPT, type OcrResult, type ReceiptFields } from "../../shared/ocr";
 
 const LLAMA_3_2_VISION = "@cf/meta/llama-3.2-11b-vision-instruct";
 
 /** 画像（data URI）を指定モデルで読み取る */
-export async function runReceiptOcr(ai: Ai, model: string, image: string, prompt = OCR_PROMPT): Promise<OcrLabResult> {
+export async function runReceiptOcr(ai: Ai, model: string, image: string, prompt = OCR_PROMPT): Promise<OcrResult> {
   const started = Date.now();
   try {
     const output = await runWithLicenseAgreement(ai, model, buildInput(model, image, prompt));
@@ -63,7 +63,7 @@ async function runWithLicenseAgreement(ai: Ai, model: string, input: Record<stri
 }
 
 /** 旧形式（{ response }）と Chat Completions 形式（{ choices }）の両方に対応 */
-function extractText(output: unknown): { text: string; usage: OcrLabResult["usage"] } {
+function extractText(output: unknown): { text: string; usage: OcrResult["usage"] } {
   const o = output as {
     response?: unknown;
     choices?: { message?: { content?: unknown } }[];

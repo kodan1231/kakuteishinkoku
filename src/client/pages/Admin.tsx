@@ -165,10 +165,6 @@ export function Admin() {
           ))}
         </ul>
       </section>
-
-      <Link to="/lab/ocr" className="block text-sm text-teal-700 underline">
-        OCR 検証ページ
-      </Link>
     </Page>
   );
 }

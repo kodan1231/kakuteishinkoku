@@ -12,7 +12,6 @@ import { FamilySettings } from "./pages/FamilySettings";
 import { Home } from "./pages/Home";
 import { Invite } from "./pages/Invite";
 import { Login } from "./pages/Login";
-import { OcrLab } from "./pages/OcrLab";
 import { Privacy } from "./pages/Privacy";
 import { RecordEdit } from "./pages/RecordEdit";
 import { Records } from "./pages/Records";
@@ -29,7 +28,6 @@ createRoot(document.getElementById("root")!).render(
           <Route path="/login" element={<Login />} />
           <Route path="/auth/callback" element={<AuthCallback />} />
           <Route path="/invite/:token" element={<Invite />} />
-          <Route path="/lab/ocr" element={<OcrLab />} />
           <Route path="/privacy" element={<Privacy />} />
           <Route path="/terms" element={<Terms />} />
           <Route
